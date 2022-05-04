@@ -25,8 +25,8 @@ int iso_seek_to_sector(iso_t* iso, long int sector_number) {
 
 void iso_open(iso_t* iso, FILE* fp) {
   iso->fp = fp;
-  iso->offset = 0;
-  iso_seek_to_sector(iso, 0);
+  iso->offset = 24;
+  iso->current_sector = 0;
 }
 
 int iso_seek_forward(iso_t* iso, long int offset) {
@@ -78,7 +78,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     }
     iso_seek_forward(iso, bytes_to_read);
   }
-  return 0;
+  return items;
 }
 
 void exercise_iso_seek(iso_t* iso) {
@@ -119,13 +119,4 @@ void exercise_iso_seek(iso_t* iso) {
   printf("iso offset: 0x%lx\niso sector: %lu\n",
     iso->offset,
     iso->current_sector);
-
-}
-
-void main(int argc, char** argv) {
-  iso_t iso;
-  FILE* fp;
-  fp = fopen(argv[1], "r");
-  iso_open(&iso, fp);
-  exercise_iso_seek(&iso);
 }
