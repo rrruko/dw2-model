@@ -43,6 +43,25 @@ typedef struct face_quad_s {
   uint8_t pad_2;
 } face_quad_t;
 
+typedef struct face_tri_s {
+  uint8_t vertex_a;
+  uint8_t vertex_b;
+  uint8_t vertex_c;
+  uint8_t normal_a;
+  uint8_t normal_b;
+  uint8_t normal_c;
+  uint8_t tex_a_x;
+  uint8_t tex_a_y;
+  uint8_t tex_b_x;
+  uint8_t tex_b_y;
+  uint8_t tex_c_x;
+  uint8_t tex_c_y;
+  uint8_t palette;
+  uint8_t clut;
+  uint8_t pad_1;
+  uint8_t pad_2;
+} face_tri_t;
+
 void die(char* message) {
   fprintf(stderr, "Fatal: %s\n", message);
   exit(1);
@@ -63,7 +82,12 @@ vertex_t* load_vertices(model_t* model, uint32_t object, uint32_t* num_read) {
   return verts;
 }
 
-face_quad_t* load_faces(model_t* model, uint32_t object, uint32_t* num_read) {
+typedef struct polys_s {
+  face_quad_t* quads;
+  face_tri_t* tris;
+} polys_t;
+
+polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, uint32_t* num_tris_read) {
   uint32_t face_offset = model->face_offsets[object];
   printf("Face offset: %x\n", face_offset);
   iso_seek_to_sector(model->iso, model->file_sector);
@@ -74,8 +98,16 @@ face_quad_t* load_faces(model_t* model, uint32_t object, uint32_t* num_read) {
   printf("Count: %x\nOffset: %lx\n", count, model->iso->offset);
   face_quad_t* quads = malloc(sizeof(face_quad_t) * count);
   iso_fread(model->iso, quads, sizeof(face_quad_t), count);
-  *num_read = count;
-  return quads;
+  *num_quads_read = count;
+  iso_seek_forward(model->iso, 4);
+  iso_fread(model->iso, &count, sizeof(uint32_t), 1);
+  face_tri_t* tris = malloc(sizeof(face_tri_t) * count);
+  iso_fread(model->iso, tris, sizeof(face_tri_t), count);
+  *num_tris_read = count;
+  return (polys_t) {
+    .quads = quads,
+    .tris = tris
+  };
 }
 
 model_t load_model(iso_t* iso, uint32_t sector) {
@@ -155,13 +187,24 @@ int main(int argc, char** argv) {
   for (int i = 0; i < num_read; i++) {
     printf("(%d, %d, %d)\n", verts[i].x, verts[i].y, verts[i].z);
   }
-  face_quad_t* quads;
-  quads = load_faces(&new_model, 0, &num_read);
-  for (int i = 0; i < num_read; i++) {
+  uint32_t num_quads_read;
+  uint32_t num_tris_read;
+  polys_t polys;
+  polys = load_faces(&new_model, 0, &num_quads_read, &num_tris_read);
+  for (int i = 0; i < num_quads_read; i++) {
+    face_quad_t* quads = polys.quads;
     printf("(%d, %d, %d, %d)\n",
       quads[i].vertex_a,
       quads[i].vertex_b,
       quads[i].vertex_c,
       quads[i].vertex_d);
   }
+  for (int i = 0; i < num_tris_read; i++) {
+    face_tri_t* tris = polys.tris;
+    printf("(%d, %d, %d)\n",
+      tris[i].vertex_a,
+      tris[i].vertex_b,
+      tris[i].vertex_c);
+  }
+
 }
