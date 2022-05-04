@@ -69,12 +69,10 @@ void die(char* message) {
 
 vertex_t* load_vertices(model_t* model, uint32_t object, uint32_t* num_read) {
   uint32_t vertex_offset = model->vertex_offsets[object];
-  printf("Vertex offset: %x\n", vertex_offset);
   iso_seek_to_sector(model->iso, model->file_sector);
   iso_seek_forward(model->iso, vertex_offset);
   uint32_t count;
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
-  printf("Count: %x\nOffset: %lx\n", count, model->iso->offset);
   vertex_t* verts = malloc(sizeof(vertex_t) * count);
   iso_seek_forward(model->iso, sizeof(uint16_t));
   iso_fread(model->iso, verts, sizeof(vertex_t), count);
@@ -89,13 +87,11 @@ typedef struct polys_s {
 
 polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, uint32_t* num_tris_read) {
   uint32_t face_offset = model->face_offsets[object];
-  printf("Face offset: %x\n", face_offset);
   iso_seek_to_sector(model->iso, model->file_sector);
   iso_seek_forward(model->iso, face_offset);
   iso_seek_forward(model->iso, 4);
   uint32_t count;
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
-  printf("Count: %x\nOffset: %lx\n", count, model->iso->offset);
   face_quad_t* quads = malloc(sizeof(face_quad_t) * count);
   iso_fread(model->iso, quads, sizeof(face_quad_t), count);
   *num_quads_read = count;
@@ -171,11 +167,11 @@ int main(int argc, char** argv) {
   model_t new_model;
   new_model = load_model(&iso, 0x285e8);
 
-  printf("Loaded model\n");
-  printf("Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
-  printf("Model object_count: %x\n", new_model.object_count);
+  fprintf(stderr, "Loaded model\n");
+  fprintf(stderr, "Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
+  fprintf(stderr, "Model object_count: %x\n", new_model.object_count);
   for (int i = 0; i < new_model.object_count; i++) {
-    printf("offsets[%d]: (%x, %x, %x)\n",
+    fprintf(stderr, "offsets[%d]: (%x, %x, %x)\n",
       i,
       new_model.vertex_offsets[i],
       new_model.normal_offsets[i],
@@ -188,7 +184,10 @@ int main(int argc, char** argv) {
     vertex_t* verts;
     verts = load_vertices(&new_model, i, &num_read);
     for (int i = 0; i < num_read; i++) {
-      printf("(%d, %d, %d)\n", verts[i].x, verts[i].y, verts[i].z);
+      printf("v %f %f %f\n",
+        verts[i].x / 4096.0,
+        verts[i].y / 4096.0,
+        verts[i].z / 4096.0);
     }
     uint32_t num_quads_read;
     uint32_t num_tris_read;
@@ -196,7 +195,7 @@ int main(int argc, char** argv) {
     polys = load_faces(&new_model, i, &num_quads_read, &num_tris_read);
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
-      printf("(%d, %d, %d, %d)\n",
+      printf("f %d %d %d %d\n",
         quads[i].vertex_a,
         quads[i].vertex_b,
         quads[i].vertex_c,
@@ -204,7 +203,7 @@ int main(int argc, char** argv) {
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
-      printf("(%d, %d, %d)\n",
+      printf("f %d %d %d\n",
         tris[i].vertex_a,
         tris[i].vertex_b,
         tris[i].vertex_c);
