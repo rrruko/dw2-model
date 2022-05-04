@@ -196,17 +196,17 @@ int main(int argc, char** argv) {
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
       printf("f %d %d %d %d\n",
-        quads[i].vertex_a,
-        quads[i].vertex_b,
-        quads[i].vertex_c,
-        quads[i].vertex_d);
+        quads[i].vertex_a + 1,
+        quads[i].vertex_b + 1,
+        quads[i].vertex_c + 1,
+        quads[i].vertex_d + 1);
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
       printf("f %d %d %d\n",
-        tris[i].vertex_a,
-        tris[i].vertex_b,
-        tris[i].vertex_c);
+        tris[i].vertex_a + 1,
+        tris[i].vertex_b + 1,
+        tris[i].vertex_c + 1);
     }
   }
 }
