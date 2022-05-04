@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct iso_s {
   FILE* fp;
@@ -58,7 +59,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
   } else {
     // Otherwise, we need to split the calls
     result = fread(temp, remaining_bytes_in_sector, 1, iso->fp);
-    if (result != items) {
+    if (result != 1) {
       return -1;
     }
     temp += remaining_bytes_in_sector;
@@ -67,16 +68,19 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     long int margin = leftover % 0x800;
     for (int i = 0; i < chunks; i++) {
       result = fread(temp, 0x800, 1, iso->fp);
-      if (result != items) {
+      if (result != 1) {
         return -1;
       }
       temp += 0x800;
     }
     result = fread(temp, margin, 1, iso->fp);
-    if (result != items) {
+    temp += margin;
+    if (result != 1) {
       return -1;
     }
     iso_seek_forward(iso, bytes_to_read);
+    // void* memcpy( void* dest, const void* src, std::size_t count );
+    memcpy(buf, temp - bytes_to_read, bytes_to_read);
   }
   return items;
 }

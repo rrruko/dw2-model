@@ -181,30 +181,33 @@ int main(int argc, char** argv) {
       new_model.normal_offsets[i],
       new_model.face_offsets[i]);
   }
-  uint32_t num_read;
-  vertex_t* verts;
-  verts = load_vertices(&new_model, 0, &num_read);
-  for (int i = 0; i < num_read; i++) {
-    printf("(%d, %d, %d)\n", verts[i].x, verts[i].y, verts[i].z);
-  }
-  uint32_t num_quads_read;
-  uint32_t num_tris_read;
-  polys_t polys;
-  polys = load_faces(&new_model, 0, &num_quads_read, &num_tris_read);
-  for (int i = 0; i < num_quads_read; i++) {
-    face_quad_t* quads = polys.quads;
-    printf("(%d, %d, %d, %d)\n",
-      quads[i].vertex_a,
-      quads[i].vertex_b,
-      quads[i].vertex_c,
-      quads[i].vertex_d);
-  }
-  for (int i = 0; i < num_tris_read; i++) {
-    face_tri_t* tris = polys.tris;
-    printf("(%d, %d, %d)\n",
-      tris[i].vertex_a,
-      tris[i].vertex_b,
-      tris[i].vertex_c);
-  }
 
+  for (int i = 0; i < new_model.object_count; i++) {
+    printf("o %d\n", i);
+    uint32_t num_read;
+    vertex_t* verts;
+    verts = load_vertices(&new_model, i, &num_read);
+    for (int i = 0; i < num_read; i++) {
+      printf("(%d, %d, %d)\n", verts[i].x, verts[i].y, verts[i].z);
+    }
+    uint32_t num_quads_read;
+    uint32_t num_tris_read;
+    polys_t polys;
+    polys = load_faces(&new_model, i, &num_quads_read, &num_tris_read);
+    for (int i = 0; i < num_quads_read; i++) {
+      face_quad_t* quads = polys.quads;
+      printf("(%d, %d, %d, %d)\n",
+        quads[i].vertex_a,
+        quads[i].vertex_b,
+        quads[i].vertex_c,
+        quads[i].vertex_d);
+    }
+    for (int i = 0; i < num_tris_read; i++) {
+      face_tri_t* tris = polys.tris;
+      printf("(%d, %d, %d)\n",
+        tris[i].vertex_a,
+        tris[i].vertex_b,
+        tris[i].vertex_c);
+    }
+  }
 }
