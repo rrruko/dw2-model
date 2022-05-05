@@ -92,6 +92,11 @@ polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, ui
   iso_seek_forward(model->iso, 4);
   uint32_t count;
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
+  fprintf(stderr, "Quad addresses:");
+  for (int i = 0; i < count; i++) {
+    fprintf(stderr, " %lx", model->iso->offset + i * 20);
+  }
+  fprintf(stderr, "\n");
   face_quad_t* quads = malloc(sizeof(face_quad_t) * count);
   iso_fread(model->iso, quads, sizeof(face_quad_t), count);
   *num_quads_read = count;
@@ -170,6 +175,9 @@ int main(int argc, char** argv) {
   fprintf(stderr, "Loaded model\n");
   fprintf(stderr, "Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
   fprintf(stderr, "Model object_count: %x\n", new_model.object_count);
+
+  uint32_t verts_seen = 0;
+
   for (int i = 0; i < new_model.object_count; i++) {
     fprintf(stderr, "offsets[%d]: (%x, %x, %x)\n",
       i,
@@ -196,17 +204,18 @@ int main(int argc, char** argv) {
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
       printf("f %d %d %d %d\n",
-        quads[i].vertex_a + 1,
-        quads[i].vertex_b + 1,
-        quads[i].vertex_c + 1,
-        quads[i].vertex_d + 1);
+        quads[i].vertex_c + 1 + verts_seen,
+        quads[i].vertex_a + 1 + verts_seen,
+        quads[i].vertex_b + 1 + verts_seen,
+        quads[i].vertex_d + 1 + verts_seen);
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
       printf("f %d %d %d\n",
-        tris[i].vertex_a + 1,
-        tris[i].vertex_b + 1,
-        tris[i].vertex_c + 1);
+        tris[i].vertex_a + 1 + verts_seen,
+        tris[i].vertex_b + 1 + verts_seen,
+        tris[i].vertex_c + 1 + verts_seen);
     }
+    verts_seen += num_read;
   }
 }
