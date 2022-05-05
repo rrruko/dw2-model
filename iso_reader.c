@@ -63,6 +63,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
       return -1;
     }
     temp += remaining_bytes_in_sector;
+    fseek(iso->fp, 0x130, SEEK_CUR);
     long int leftover = bytes_to_read - remaining_bytes_in_sector;
     long int chunks = leftover / 0x800;
     long int margin = leftover % 0x800;
@@ -72,6 +73,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
         return -1;
       }
       temp += 0x800;
+      fseek(iso->fp, 0x130, SEEK_CUR);
     }
     result = fread(temp, margin, 1, iso->fp);
     temp += margin;
