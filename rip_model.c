@@ -261,10 +261,6 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
   if (items_read != 1) {
     die("fread failure, an error occured or EOF (matrix)");
   }
-  fprintf(stderr, "| %f %f %f |\n| %f %f %f |\n| %f %f %f |\n",
-    m.x[0] / 4096.0, m.x[1] / 4096.0, m.x[2] / 4096.0,
-    m.x[3] / 4096.0, m.x[4] / 4096.0, m.x[5] / 4096.0,
-    m.x[6] / 4096.0, m.x[7] / 4096.0, m.x[8] / 4096.0);
   vertex_t translation = {0};
   items_read = iso_fread(
     animation->iso,
@@ -274,10 +270,6 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
   if (items_read != 1) {
     die("fread failure, an error occured or EOF (translation)");
   }
-  fprintf(stderr, "%f %f %f\n\n",
-    translation.x / 4096.0,
-    translation.y / 4096.0,
-    translation.z / 4096.0);
   if (sizeof(matrix_t) + sizeof(vertex_t) != 24) {
     die("alignment issue");
   }
