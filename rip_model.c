@@ -211,9 +211,15 @@ typedef struct matrix_s {
 
 vertex_t rotate(matrix_t m, vertex_t v) {
   return (vertex_t) {
-    .x = (int32_t) v.x * m.x[0] + (int32_t) v.x * m.x[3] + (int32_t) v.x * m.x[6],
-    .y = (int32_t) v.y * m.x[1] + (int32_t) v.y * m.x[4] + (int32_t) v.y * m.x[7],
-    .z = (int32_t) v.z * m.x[2] + (int32_t) v.z * m.x[5] + (int32_t) v.z * m.x[8]
+    .x = ((int32_t) v.x * m.x[0]) / 4096
+       + ((int32_t) v.y * m.x[1]) / 4096
+       + ((int32_t) v.z * m.x[2]) / 4096,
+    .y = ((int32_t) v.x * m.x[3]) / 4096
+       + ((int32_t) v.y * m.x[4]) / 4096
+       + ((int32_t) v.z * m.x[5]) / 4096,
+    .z = ((int32_t) v.x * m.x[6]) / 4096
+       + ((int32_t) v.y * m.x[7]) / 4096
+       + ((int32_t) v.z * m.x[8]) / 4096
   };
 }
 
@@ -245,14 +251,25 @@ vertex_t transform_vertex(vertex_t v, animation_t* animation, uint32_t object, u
   if (items_read != 1) {
     die("fread failure, an error occured or EOF (matrix)");
   }
-  vertex_t translation;
+  fprintf(stderr, "| %f %f %f |\n| %f %f %f |\n| %f %f %f |\n",
+    m.x[0] / 4096.0, m.x[1] / 4096.0, m.x[2] / 4096.0,
+    m.x[3] / 4096.0, m.x[4] / 4096.0, m.x[5] / 4096.0,
+    m.x[6] / 4096.0, m.x[7] / 4096.0, m.x[8] / 4096.0);
+  vertex_t translation = {0};
   items_read = iso_fread(
     animation->iso,
-    &offset,
+    &translation,
     sizeof(vertex_t),
     1);
   if (items_read != 1) {
     die("fread failure, an error occured or EOF (translation)");
+  }
+  fprintf(stderr, "%f %f %f\n\n",
+    translation.x / 4096.0,
+    translation.y / 4096.0,
+    translation.z / 4096.0);
+  if (sizeof(matrix_t) + sizeof(vertex_t) != 24) {
+    die("alignment issue");
   }
   vertex_t v_rotated = rotate(m, v);
   vertex_t v_translated = translate(translation, v_rotated);
@@ -354,13 +371,13 @@ int main(int argc, char** argv) {
       new_model.face_offsets[i]);
   }
 
-  for (int i = 0; i < new_model.object_count; i++) {
-    printf("o %d\n", i);
+  for (int j = 0; j < new_model.object_count; j++) {
+    printf("o %d\n", j);
     uint32_t num_read;
     vertex_t* verts;
-    verts = load_vertices(&new_model, i, &num_read);
+    verts = load_vertices(&new_model, j, &num_read);
     for (int i = 0; i < num_read; i++) {
-      vertex_t v = transform_vertex(verts[i], &animation, i, 0);
+      vertex_t v = transform_vertex(verts[i], &animation, j, 0);
       printf("v %f %f %f\n",
         v.x / 4096.0,
         v.y / 4096.0,
@@ -369,7 +386,7 @@ int main(int argc, char** argv) {
     uint32_t num_quads_read;
     uint32_t num_tris_read;
     polys_t polys;
-    polys = load_faces(&new_model, i, &num_quads_read, &num_tris_read);
+    polys = load_faces(&new_model, j, &num_quads_read, &num_tris_read);
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
       printf("vt %f %f\nvt %f %f\nvt %f %f\nvt %f %f\n",

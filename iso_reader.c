@@ -44,7 +44,6 @@ int iso_seek_forward(iso_t* iso, long int offset) {
 
 int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
   size_t bytes_to_read = member_size * items;
-  char* temp = malloc(bytes_to_read);
   long int start_of_current_sector = 24 + 0x930 * iso->current_sector;
   long int sector_progress = iso->offset - start_of_current_sector;
   long int remaining_bytes_in_sector = 0x800 - sector_progress;
@@ -57,6 +56,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     }
     iso->offset += bytes_to_read;
   } else {
+    char* temp = malloc(bytes_to_read);
     // Otherwise, we need to split the calls
     result = fread(temp, remaining_bytes_in_sector, 1, iso->fp);
     if (result != 1) {
