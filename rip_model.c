@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <png.h>
 
 #include "iso_reader.h"
 
@@ -62,9 +64,63 @@ typedef struct face_tri_s {
   uint8_t pad_2;
 } face_tri_t;
 
+typedef struct paletted_texture_s {
+  uint16_t* palette; // 16 entries of 16 bits each
+  uint8_t* texture; // Size is 128 x 256 x 4 bpp = 16384 bytes
+} paletted_texture_t;
+
 void die(char* message) {
   fprintf(stderr, "Fatal: %s\n", message);
   exit(1);
+}
+
+uint16_t fake_palette[16] = {
+  0x0001, 0x0421, 0x0842, 0x0c63,
+  0x1084, 0x14a5, 0x18c6, 0x1ce7,
+  0x2108, 0x2529, 0x294a, 0x2d6b,
+  0x318c, 0x35ad, 0x39ce, 0x3def
+};
+
+paletted_texture_t load_texture(model_t* model) {
+  paletted_texture_t new_texture;
+  memset(&new_texture, 0, sizeof(paletted_texture_t));
+  iso_seek_to_sector(model->iso, model->file_sector);
+  iso_seek_forward(model->iso, model->texture_sheet_offset);
+  iso_seek_forward(model->iso, 64);
+  new_texture.texture = malloc(0x4000);
+  iso_fread(model->iso, new_texture.texture, sizeof(uint8_t), 0x4000);
+  new_texture.palette = fake_palette;
+  return new_texture;
+}
+
+uint8_t* expand_texture(paletted_texture_t* tex) {
+  uint8_t* expanded = malloc(128 * 256);
+  for (int i = 0; i < 16384; i++) {
+    uint8_t this_byte = tex->texture[i];
+    uint8_t upper = (this_byte & 0xf0) >> 4;
+    uint8_t lower = (this_byte & 0x0f);
+    expanded[2*i+1] = 16 * (16 - (upper + 1));
+    expanded[2*i+0] = 16 * (16 - (lower + 1));
+  }
+  return expanded;
+}
+
+void save_png_texture(paletted_texture_t* tex, char* filename) {
+  png_image png;
+  memset(&png, 0, sizeof(png_image));
+  png.version = PNG_IMAGE_VERSION;
+  png.width = 128;
+  png.height = 256;
+  png.colormap_entries = 0;
+  png.flags = PNG_FORMAT_GRAY;
+  uint8_t* texture_expanded = expand_texture(tex);
+  png_image_write_to_file(
+    &png,
+    filename,
+    0 /* convert_to_8_bit */,
+    texture_expanded,
+    0 /* row_stride */,
+    NULL /* colormap */);
 }
 
 vertex_t* load_vertices(model_t* model, uint32_t object, uint32_t* num_read) {
@@ -157,8 +213,8 @@ model_t load_model(iso_t* iso, uint32_t sector) {
 }
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
-    die("Expected a filename");
+  if (argc < 4) {
+    die("Usage: ./rip_model.c INFILE SECTOR OUTFILE");
   }
   FILE* fp;
   fp = fopen(argv[1], "r");
@@ -170,13 +226,15 @@ int main(int argc, char** argv) {
   iso_open(&iso, fp);
 
   model_t new_model;
-  new_model = load_model(&iso, 0x285e8);
+  uint32_t sector = strtoul(argv[2], NULL, 16);
+  new_model = load_model(&iso, sector);
 
   fprintf(stderr, "Loaded model\n");
   fprintf(stderr, "Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
   fprintf(stderr, "Model object_count: %x\n", new_model.object_count);
 
   uint32_t verts_seen = 0;
+  uint32_t texcoords_seen = 0;
 
   for (int i = 0; i < new_model.object_count; i++) {
     fprintf(stderr, "offsets[%d]: (%x, %x, %x)\n",
@@ -203,19 +261,51 @@ int main(int argc, char** argv) {
     polys = load_faces(&new_model, i, &num_quads_read, &num_tris_read);
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
-      printf("f %d %d %d %d\n",
-        quads[i].vertex_c + 1 + verts_seen,
-        quads[i].vertex_a + 1 + verts_seen,
-        quads[i].vertex_b + 1 + verts_seen,
-        quads[i].vertex_d + 1 + verts_seen);
+      printf("vt %f %f\nvt %f %f\nvt %f %f\nvt %f %f\n",
+        quads[i].tex_c_x / 128.0,
+        quads[i].tex_c_y / 256.0,
+        quads[i].tex_a_x / 128.0,
+        quads[i].tex_a_y / 256.0,
+        quads[i].tex_b_x / 128.0,
+        quads[i].tex_b_y / 256.0,
+        quads[i].tex_d_x / 128.0,
+        quads[i].tex_d_y / 256.0);
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
-      printf("f %d %d %d\n",
-        tris[i].vertex_a + 1 + verts_seen,
-        tris[i].vertex_b + 1 + verts_seen,
-        tris[i].vertex_c + 1 + verts_seen);
+      printf("vt %f %f\nvt %f %f\nvt %f %f\n",
+        tris[i].tex_a_x / 128.0,
+        tris[i].tex_a_y / 256.0,
+        tris[i].tex_b_x / 128.0,
+        tris[i].tex_b_y / 256.0,
+        tris[i].tex_c_x / 128.0,
+        tris[i].tex_c_y / 256.0);
     }
+    for (int i = 0; i < num_quads_read; i++) {
+      face_quad_t* quads = polys.quads;
+      printf("f %d/%d %d/%d %d/%d %d/%d\n",
+        quads[i].vertex_c + 1 + verts_seen,
+        texcoords_seen + 4 * i + 1,
+        quads[i].vertex_a + 1 + verts_seen,
+        texcoords_seen + 4 * i + 2,
+        quads[i].vertex_b + 1 + verts_seen,
+        texcoords_seen + 4 * i + 3,
+        quads[i].vertex_d + 1 + verts_seen,
+        texcoords_seen + 4 * i + 4);
+    }
+    for (int i = 0; i < num_tris_read; i++) {
+      face_tri_t* tris = polys.tris;
+      printf("f %d/%d %d/%d %d/%d\n",
+        tris[i].vertex_a + 1 + verts_seen,
+        texcoords_seen + 4 * num_quads_read + 3 * i + 1,
+        tris[i].vertex_b + 1 + verts_seen,
+        texcoords_seen + 4 * num_quads_read + 3 * i + 2,
+        tris[i].vertex_c + 1 + verts_seen,
+        texcoords_seen + 4 * num_quads_read + 3 * i + 3);
+    }
+    texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
   }
+  paletted_texture_t tex = load_texture(&new_model);
+  save_png_texture(&tex, argv[3]);
 }
