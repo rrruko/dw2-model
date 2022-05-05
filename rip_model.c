@@ -11,6 +11,7 @@ typedef struct model_s {
   uint32_t file_sector;
   uint32_t texture_sheet_offset;
   uint32_t object_count;
+  uint32_t* skeleton;
   uint32_t* vertex_offsets;
   uint32_t* normal_offsets;
   uint32_t* face_offsets;
@@ -167,6 +168,97 @@ polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, ui
   };
 }
 
+typedef struct animation_s {
+  iso_t* iso;
+  uint32_t file_sector;
+  uint32_t* offsets;
+  uint8_t* frame_table;
+} animation_t;
+
+animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
+  animation_t animation;
+  animation.iso = iso;
+  animation.file_sector = sector;
+  iso_seek_to_sector(iso, sector);
+  iso_seek_forward(iso, sizeof(uint32_t)); // Unused (always zero)?
+  size_t items_read;
+  animation.offsets = malloc(object_count * sizeof(uint32_t));
+  items_read = iso_fread(
+    iso,
+    animation.offsets,
+    sizeof(uint32_t),
+    object_count);
+  if (items_read != object_count) {
+    die("fread failure, an error occured or EOF (animation offsets)");
+  }
+  iso_seek_forward(iso, sizeof(uint32_t) * 2); // Don't know what these bytes mean
+  uint32_t frame_count = 30; // Unsure if this is encoded anywhere or can change
+  animation.frame_table = malloc(object_count * frame_count);
+  items_read = iso_fread(
+    iso,
+    animation.frame_table,
+    sizeof(uint8_t),
+    object_count * frame_count);
+  if (items_read != object_count * frame_count) {
+    die("fread failure, an error occured or EOF (frame table)");
+  }
+  return animation;
+}
+
+typedef struct matrix_s {
+  int16_t x[9];
+} matrix_t;
+
+vertex_t rotate(matrix_t m, vertex_t v) {
+  return (vertex_t) {
+    .x = (int32_t) v.x * m.x[0] + (int32_t) v.x * m.x[3] + (int32_t) v.x * m.x[6],
+    .y = (int32_t) v.y * m.x[1] + (int32_t) v.y * m.x[4] + (int32_t) v.y * m.x[7],
+    .z = (int32_t) v.z * m.x[2] + (int32_t) v.z * m.x[5] + (int32_t) v.z * m.x[8]
+  };
+}
+
+vertex_t translate(vertex_t a, vertex_t b) {
+  return (vertex_t) {
+    .x = a.x + b.x,
+    .y = a.y + b.y,
+    .z = a.z + b.z
+  };
+}
+
+// We transform a vertex by looking up its object's transform matrix and
+// translation on the given frame number, and then potentially recursing with the parent object
+vertex_t transform_vertex(vertex_t v, animation_t* animation, uint32_t object, uint32_t frame) {
+  if (object > 0) {
+    v = transform_vertex(v, animation, object - 1, frame);
+  }
+  uint32_t offset = animation->offsets[object];
+  iso_seek_to_sector(animation->iso, animation->file_sector);
+  // We should actually be looking up the correct frame in the frame table but
+  // it doesn't make much difference for our test model
+  iso_seek_forward(animation->iso, offset + frame * 24);
+  matrix_t m;
+  size_t items_read = iso_fread(
+    animation->iso,
+    &m,
+    sizeof(matrix_t),
+    1);
+  if (items_read != 1) {
+    die("fread failure, an error occured or EOF (matrix)");
+  }
+  vertex_t translation;
+  items_read = iso_fread(
+    animation->iso,
+    &offset,
+    sizeof(vertex_t),
+    1);
+  if (items_read != 1) {
+    die("fread failure, an error occured or EOF (translation)");
+  }
+  vertex_t v_rotated = rotate(m, v);
+  vertex_t v_translated = translate(translation, v_rotated);
+  return v_translated;
+}
+
 model_t load_model(iso_t* iso, uint32_t sector) {
   model_t new_model;
   new_model.iso = iso;
@@ -209,12 +301,21 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   if (items_read != new_model.object_count) {
     die("fread failure, an error occured or EOF (face_offsets)");
   }
+  new_model.skeleton = malloc(new_model.object_count * sizeof(uint32_t));
+  items_read = iso_fread(
+    iso,
+    new_model.skeleton,
+    sizeof(uint32_t),
+    new_model.object_count);
+  if (items_read != new_model.object_count) {
+    die("fread failure, an error occured or EOF (skeleton)");
+  }
   return new_model;
 }
 
 int main(int argc, char** argv) {
-  if (argc < 4) {
-    die("Usage: ./rip_model.c INFILE SECTOR OUTFILE");
+  if (argc < 6) {
+    die("Usage: ./rip_model.c INFILE MODEL_SECTOR ANIMATION_SECTOR FRAME OUTFILE");
   }
   FILE* fp;
   fp = fopen(argv[1], "r");
@@ -226,12 +327,21 @@ int main(int argc, char** argv) {
   iso_open(&iso, fp);
 
   model_t new_model;
-  uint32_t sector = strtoul(argv[2], NULL, 16);
-  new_model = load_model(&iso, sector);
+  uint32_t model_sector = strtoul(argv[2], NULL, 16);
+  new_model = load_model(&iso, model_sector);
+
+  animation_t animation;
+  uint32_t animation_sector = strtoul(argv[3], NULL, 16);
+  animation = load_animation(&iso, animation_sector, new_model.object_count);
 
   fprintf(stderr, "Loaded model\n");
   fprintf(stderr, "Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
   fprintf(stderr, "Model object_count: %x\n", new_model.object_count);
+  fprintf(stderr, "Model skeleton:");
+  for (int i = 0; i < new_model.object_count; i++) {
+    fprintf(stderr, " %d", new_model.skeleton[i]);
+  }
+  fprintf(stderr, "\n");
 
   uint32_t verts_seen = 0;
   uint32_t texcoords_seen = 0;
@@ -250,10 +360,11 @@ int main(int argc, char** argv) {
     vertex_t* verts;
     verts = load_vertices(&new_model, i, &num_read);
     for (int i = 0; i < num_read; i++) {
+      vertex_t v = transform_vertex(verts[i], &animation, i, 0);
       printf("v %f %f %f\n",
-        verts[i].x / 4096.0,
-        verts[i].y / 4096.0,
-        verts[i].z / 4096.0);
+        v.x / 4096.0,
+        v.y / 4096.0,
+        v.z / 4096.0);
     }
     uint32_t num_quads_read;
     uint32_t num_tris_read;
@@ -307,5 +418,5 @@ int main(int argc, char** argv) {
     verts_seen += num_read;
   }
   paletted_texture_t tex = load_texture(&new_model);
-  save_png_texture(&tex, argv[3]);
+  save_png_texture(&tex, argv[5]);
 }
