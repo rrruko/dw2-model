@@ -233,9 +233,19 @@ vertex_t translate(vertex_t a, vertex_t b) {
 
 // We transform a vertex by looking up its object's transform matrix and
 // translation on the given frame number, and then potentially recursing with the parent object
-vertex_t transform_vertex(vertex_t v, animation_t* animation, uint32_t object, uint32_t frame) {
-  if (object > 0) {
-    v = transform_vertex(v, animation, object - 1, frame);
+vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, uint32_t object, uint32_t frame) {
+  if (model->skeleton[object] > 0) {
+    uint32_t parent = -1;
+    for (int i = object - 1; i >= 0; i--) {
+      if (model->skeleton[i] + 1 == model->skeleton[object]) {
+        parent = i;
+        break;
+      }
+    }
+    if (parent == -1) {
+      die("Couldn't find the parent object");
+    }
+    v = transform_vertex(v, model, animation, parent, frame);
   }
   uint32_t offset = animation->offsets[object];
   iso_seek_to_sector(animation->iso, animation->file_sector);
@@ -377,7 +387,7 @@ int main(int argc, char** argv) {
     vertex_t* verts;
     verts = load_vertices(&new_model, j, &num_read);
     for (int i = 0; i < num_read; i++) {
-      vertex_t v = transform_vertex(verts[i], &animation, j, 0);
+      vertex_t v = transform_vertex(verts[i], &new_model, &animation, j, 0);
       printf("v %f %f %f\n",
         v.x / 4096.0,
         v.y / 4096.0,
