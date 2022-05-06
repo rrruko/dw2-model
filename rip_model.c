@@ -234,19 +234,6 @@ vertex_t translate(vertex_t a, vertex_t b) {
 // We transform a vertex by looking up its object's transform matrix and
 // translation on the given frame number, and then potentially recursing with the parent object
 vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, uint32_t object, uint32_t frame) {
-  if (model->skeleton[object] > 0) {
-    uint32_t parent = -1;
-    for (int i = object - 1; i >= 0; i--) {
-      if (model->skeleton[i] + 1 == model->skeleton[object]) {
-        parent = i;
-        break;
-      }
-    }
-    if (parent == -1) {
-      die("Couldn't find the parent object");
-    }
-    v = transform_vertex(v, model, animation, parent, frame);
-  }
   uint32_t offset = animation->offsets[object];
   iso_seek_to_sector(animation->iso, animation->file_sector);
   // We should actually be looking up the correct frame in the frame table but
@@ -275,7 +262,21 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
   }
   vertex_t v_rotated = rotate(m, v);
   vertex_t v_translated = translate(translation, v_rotated);
-  return v_translated;
+  if (model->skeleton[object] > 0) {
+    uint32_t parent = -1;
+    for (int i = object - 1; i >= 0; i--) {
+      if (model->skeleton[i] + 1 == model->skeleton[object]) {
+        parent = i;
+        break;
+      }
+    }
+    if (parent == -1) {
+      die("Couldn't find the parent object");
+    }
+    return transform_vertex(v_translated, model, animation, parent, frame);
+  } else {
+    return v_translated;
+  }
 }
 
 model_t load_model(iso_t* iso, uint32_t sector) {
