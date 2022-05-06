@@ -11,5 +11,6 @@ in
     nativeBuildInputs = [
       nixpkgs.libpng
       nixpkgs.gcc
+      nixpkgs.valgrind
     ];
   }
