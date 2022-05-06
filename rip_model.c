@@ -160,6 +160,47 @@ void save_png_texture(paletted_texture_t* tex, char* filename) {
     NULL /* colormap */);
 }
 
+uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_t row) {
+  uint32_t stride = 64;
+  uint8_t* expanded = malloc(3 * 128 * 256);
+  for (int i = 0; i < 16384; i++) {
+    uint8_t lower = tex->texture[i] & 0x0f;
+    uint8_t upper = (tex->texture[i] & 0xf0) >> 4;
+    uint16_t* palette = &tex->texture[row * stride + column * 32];
+    uint16_t color_lower = palette[lower];
+    uint16_t color_upper = palette[upper];
+
+    expanded[6 * i + 0] = (color_lower & 0x001f) << 3;
+    expanded[6 * i + 1] = (color_lower & 0x03e0) >> 2;
+    expanded[6 * i + 2] = (color_lower & 0x7c00) >> 7;
+    expanded[6 * i + 3] = (color_upper & 0x001f) << 3;
+    expanded[6 * i + 4] = (color_upper & 0x03e0) >> 2;
+    expanded[6 * i + 5] = (color_upper & 0x7c00) >> 7;
+  }
+  return expanded;
+}
+
+char* googa = "googa.png";
+
+void save_png_texture_with_palette(paletted_texture_t* tex, char* filename, uint8_t column, uint8_t row) {
+  png_image png;
+  memset(&png, 0, sizeof(png_image));
+  png.version = PNG_IMAGE_VERSION;
+  png.width = 128;
+  png.height = 256;
+  png.colormap_entries = 0;
+  png.format = PNG_FORMAT_RGB;
+  png.flags = 0;
+  uint8_t* texture_expanded = expand_texture_paletted(tex, column, row);
+  png_image_write_to_file(
+    &png,
+    googa,
+    0,
+    texture_expanded,
+    0,
+    NULL);
+}
+
 vertex_t* load_vertices(model_t* model, uint32_t object, uint32_t* num_read) {
   uint32_t vertex_offset = model->vertex_offsets[object];
   iso_seek_to_sector(model->iso, model->file_sector);
@@ -477,4 +518,5 @@ int main(int argc, char** argv) {
   }
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
+  save_png_texture_with_palette(&tex, argv[5], 1, 0xfe);
 }
