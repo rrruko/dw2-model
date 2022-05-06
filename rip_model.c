@@ -106,6 +106,21 @@ uint8_t* expand_texture(paletted_texture_t* tex) {
   return expanded;
 }
 
+uint8_t* expand_texture_rgb(paletted_texture_t* tex) {
+  uint8_t* expanded = malloc(3 * 32 * 256);
+  for (int i = 0; i < 8192; i++) {
+    uint8_t lower_byte = tex->texture[2 * i];
+    uint8_t upper_byte = tex->texture[2 * i + 1];
+    uint8_t red = lower_byte & 0x1f;
+    uint8_t green = ((lower_byte & 0xe0) >> 5) | ((upper_byte & 0x03) << 3);
+    uint8_t blue = (upper_byte & 0x7c) >> 2;
+    expanded[3 * i + 0] = red << 3;
+    expanded[3 * i + 1] = green << 3;
+    expanded[3 * i + 2] = blue << 3;
+  }
+  return expanded;
+}
+
 void save_png_texture(paletted_texture_t* tex, char* filename) {
   png_image png;
   memset(&png, 0, sizeof(png_image));
@@ -113,13 +128,34 @@ void save_png_texture(paletted_texture_t* tex, char* filename) {
   png.width = 128;
   png.height = 256;
   png.colormap_entries = 0;
-  png.flags = PNG_FORMAT_GRAY;
+  png.format = PNG_FORMAT_GRAY;
+  png.flags = 0;
   uint8_t* texture_expanded = expand_texture(tex);
   png_image_write_to_file(
     &png,
     filename,
     0 /* convert_to_8_bit */,
     texture_expanded,
+    0 /* row_stride */,
+    NULL /* colormap */);
+
+  png_image rgb_png;
+  memset(&rgb_png, 0, sizeof(png_image));
+  rgb_png.version = PNG_IMAGE_VERSION;
+  rgb_png.width = 32;
+  rgb_png.height = 256;
+  rgb_png.colormap_entries = 0;
+  rgb_png.format = PNG_FORMAT_RGB;
+  rgb_png.flags = 0;
+  uint8_t* texture_expanded_rgb = expand_texture_rgb(tex);
+  char* new_filename = calloc(strlen(filename) + 5, 1);
+  strcat(new_filename, "rgb-");
+  strcat(new_filename, filename);
+  png_image_write_to_file(
+    &rgb_png,
+    new_filename,
+    0 /* convert_to_8_bit */,
+    texture_expanded_rgb,
     0 /* row_stride */,
     NULL /* colormap */);
 }
