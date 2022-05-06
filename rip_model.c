@@ -354,6 +354,8 @@ int main(int argc, char** argv) {
   uint32_t animation_sector = strtoul(argv[3], NULL, 16);
   animation = load_animation(&iso, animation_sector, new_model.object_count);
 
+  uint32_t frame = atoi(argv[4]);
+
   fprintf(stderr, "Loaded model\n");
   fprintf(stderr, "Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
   fprintf(stderr, "Model object_count: %x\n", new_model.object_count);
@@ -380,7 +382,7 @@ int main(int argc, char** argv) {
     vertex_t* verts;
     verts = load_vertices(&new_model, j, &num_read);
     for (int i = 0; i < num_read; i++) {
-      vertex_t v = transform_vertex(verts[i], &new_model, &animation, j, 0);
+      vertex_t v = transform_vertex(verts[i], &new_model, &animation, j, frame);
       printf("v %f %f %f\n",
         v.x / 4096.0,
         v.y / 4096.0,
