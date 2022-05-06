@@ -5,6 +5,8 @@
 #include <png.h>
 
 #include "iso_reader.h"
+#define CGLTF_WRITE_IMPLEMENTATION
+#include "cgltf_write.h"
 
 typedef struct model_s {
   iso_t* iso;
@@ -410,6 +412,144 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
+void make_epic_gltf_file() {
+  cgltf_buffer buffers[2] = {
+    {
+      .name = "vertex_buffer",
+      .size = 36,
+      // 3 vertices of 3 floats each, 3 * 3 * 4 = 36 bytes
+      .uri =
+      "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      .name = "vertex_index_buffer",
+      .size = 12,
+      // 3 indices of 32-bit size, little-endian, "0 1 2"
+      .uri = "data:application/octet-stream;base64,AAAAAAEAAAACAAAA"
+    }
+  };
+  cgltf_buffer_view buffer_views[2] = {
+    {
+      .name = "vertex_buffer_view",
+      .buffer = &buffers[0],
+      .offset = 0,
+      .size = 36,
+      .stride = 0, // Automatically determined by accessor
+      .type = cgltf_buffer_view_type_vertices
+    },
+    {
+      .name = "vertex_index_buffer_view",
+      .buffer = &buffers[1],
+      .offset = 0,
+      .size = 12,
+      .stride = 0, // Automatically determined by accessor
+      .type = cgltf_buffer_view_type_indices
+    }
+  };
+  cgltf_accessor accessors[2] = {
+    {
+      .name = "vertex",
+      .component_type = cgltf_component_type_r_32f,
+      .type = cgltf_type_vec3,
+      .offset = 0,
+      .count = 3,
+      .stride = 12, // 3 * 32 bit
+      .buffer_view = &buffer_views[0],
+      .has_min = 1,
+      .has_max = 1,
+    },
+    {
+      .name = "vertex_index",
+      .component_type = cgltf_component_type_r_32u,
+      .normalized = 0, // ???
+      .type = cgltf_type_scalar,
+      .offset = 0,
+      .count = 3,
+      .stride = 4, // 32 bit
+      .buffer_view = &buffer_views[1],
+      .has_min = 0,
+      .has_max = 0,
+      .is_sparse = 0
+    }
+  };
+  accessors[0].min[0] = 0.0;
+  accessors[0].min[1] = 0.0;
+  accessors[0].min[2] = 0.0;
+  accessors[0].max[0] = 0.0;
+  accessors[0].max[1] = 0.0;
+  accessors[0].max[2] = 0.0;
+  cgltf_attribute my_attribute = {
+    .name = "POSITION",
+    .type = cgltf_attribute_type_position,
+    .index = 0,
+    .data = &accessors[0]
+  };
+
+  cgltf_primitive prim = {0};
+  prim.type = cgltf_primitive_type_triangles;
+  prim.indices = &accessors[1];
+  prim.attributes = (cgltf_attribute*) { &my_attribute };
+  prim.attributes_count = 1;
+
+  cgltf_mesh mesh = {0};
+  mesh.primitives = (cgltf_primitive*) { &prim };
+  mesh.primitives_count = 1;
+
+  cgltf_node nodes[1] = {
+    {
+      .name = "node",
+      .parent = NULL,
+      .children = NULL,
+      .children_count = 0,
+      .skin = NULL,
+      .mesh = &mesh,
+      .has_translation = 1
+    }
+  };
+  nodes[0].translation[0] = 0.0;
+  nodes[0].translation[1] = 0.0;
+  nodes[0].translation[2] = 0.0;
+
+  cgltf_scene scenes[1] = {
+    {
+      .name = "scene",
+      .nodes = (cgltf_node*[]) { &nodes[0] },
+      .nodes_count = 1
+    }
+  };
+
+  cgltf_data data = {0};
+  data.meshes = (cgltf_mesh*) { &mesh };
+  data.meshes_count = 1;
+
+  data.accessors = accessors;
+  data.accessors_count = 2;
+
+  data.buffer_views = buffer_views;
+  data.buffer_views_count = 2;
+
+  data.buffers = buffers;
+  data.buffers_count = 2;
+
+  data.nodes = nodes;
+  data.nodes_count = 1;
+
+  data.scenes = scenes;
+  data.scenes_count = 1;
+
+  data.asset = (cgltf_asset) {
+    .copyright = "",
+    .generator = "bukosoft corporation",
+    .version = "2.0"
+  };
+
+  cgltf_options options = {0};
+  cgltf_result result = cgltf_write_file(&options, "out.gltf", &data);
+  if (result != cgltf_result_success) {
+    fprintf(stderr, "Bad cgltf result: %d\n", result);
+  }
+}
+
 int main(int argc, char** argv) {
   if (argc < 6) {
     die("Usage: ./rip_model.c INFILE MODEL_SECTOR ANIMATION_SECTOR FRAME OUTFILE");
@@ -516,6 +656,7 @@ int main(int argc, char** argv) {
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
   }
+  make_epic_gltf_file();
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
   save_png_texture_with_palette(&tex, argv[5], 1, 0xfe);
