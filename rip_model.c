@@ -456,20 +456,39 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float* vertices, size_t vertex_count) {
+void make_epic_gltf_file(float* vertices, size_t vertex_count, uint32_t*
+tri_indices, size_t tri_index_count) {
   char* vertex_encoded = octet_stream_encode(vertices, 4 * 3 * vertex_count);
+  char* index_encoded = octet_stream_encode(tri_indices, 4 * 3 * tri_index_count);
+  float min_x = +999999;
+  float min_y = +999999;
+  float min_z = +999999;
+  float max_x = -999999;
+  float max_y = -999999;
+  float max_z = -999999;
+  for (int i = 0; i < vertex_count; i++) {
+    float vx = vertices[3 * i + 0];
+    float vy = vertices[3 * i + 1];
+    float vz = vertices[3 * i + 2];
+    fprintf(stderr, "Consider the following: %f %f %f\n", vx, vy, vz);
+    if (vx < min_x) min_x = vx;
+    if (vx > max_x) max_x = vx;
+    if (vy < min_y) min_y = vy;
+    if (vy > max_y) max_y = vy;
+    if (vz < min_z) min_z = vz;
+    if (vz > max_z) max_z = vz;
+  }
   cgltf_buffer buffers[2] = {
     {
       .name = "vertex_buffer",
       .size = 4 * 3 * vertex_count,
-      // 3 vertices of 3 floats each, 3 * 3 * 4 = 36 bytes
       .uri = vertex_encoded
     },
     {
       .name = "vertex_index_buffer",
-      .size = 12,
+      .size = 4 * 3 * tri_index_count,
       // 3 indices of 32-bit size, little-endian, "0 1 2"
-      .uri = "data:application/octet-stream;base64,AAAAAAEAAAACAAAA"
+      .uri = index_encoded
     }
   };
   cgltf_buffer_view buffer_views[2] = {
@@ -485,7 +504,7 @@ void make_epic_gltf_file(float* vertices, size_t vertex_count) {
       .name = "vertex_index_buffer_view",
       .buffer = &buffers[1],
       .offset = 0,
-      .size = 12,
+      .size = 4 * 3 * tri_index_count,
       .stride = 0, // Automatically determined by accessor
       .type = cgltf_buffer_view_type_indices
     }
@@ -496,7 +515,7 @@ void make_epic_gltf_file(float* vertices, size_t vertex_count) {
       .component_type = cgltf_component_type_r_32f,
       .type = cgltf_type_vec3,
       .offset = 0,
-      .count = 3,
+      .count = vertex_count,
       .stride = 12, // 3 * 32 bit
       .buffer_view = &buffer_views[0],
       .has_min = 1,
@@ -508,7 +527,7 @@ void make_epic_gltf_file(float* vertices, size_t vertex_count) {
       .normalized = 0, // ???
       .type = cgltf_type_scalar,
       .offset = 0,
-      .count = 3,
+      .count = tri_index_count,
       .stride = 4, // 32 bit
       .buffer_view = &buffer_views[1],
       .has_min = 0,
@@ -516,12 +535,12 @@ void make_epic_gltf_file(float* vertices, size_t vertex_count) {
       .is_sparse = 0
     }
   };
-  accessors[0].min[0] = 0.0;
-  accessors[0].min[1] = 0.0;
-  accessors[0].min[2] = 0.0;
-  accessors[0].max[0] = 0.0;
-  accessors[0].max[1] = 0.0;
-  accessors[0].max[2] = 0.0;
+  accessors[0].min[0] = min_x;
+  accessors[0].min[1] = min_y;
+  accessors[0].min[2] = min_z;
+  accessors[0].max[0] = max_x;
+  accessors[0].max[1] = max_y;
+  accessors[0].max[2] = max_z;
   cgltf_attribute my_attribute = {
     .name = "POSITION",
     .type = cgltf_attribute_type_position,
@@ -641,6 +660,10 @@ int main(int argc, char** argv) {
   memset(flat_vert_table, 0, new_model.object_count * sizeof(float*));
   size_t flat_vert_counts[new_model.object_count];
   memset(flat_vert_counts, 0, new_model.object_count * sizeof(size_t));
+  uint32_t* flat_tri_table[new_model.object_count];
+  memset(flat_tri_table, 0, new_model.object_count * sizeof(uint32_t*));
+  size_t flat_tri_counts[new_model.object_count];
+  memset(flat_tri_counts, 0, new_model.object_count * sizeof(size_t));
   for (int j = 0; j < new_model.object_count; j++) {
     printf("o %d\n", j);
     uint32_t num_read;
@@ -663,6 +686,10 @@ int main(int argc, char** argv) {
     uint32_t num_tris_read;
     polys_t polys;
     polys = load_faces(&new_model, j, &num_quads_read, &num_tris_read);
+    uint32_t* flat_tris = calloc(
+      num_quads_read * 2 + num_tris_read,
+      3 * sizeof(uint32_t)
+    );
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
       printf("vt %f %f\nvt %f %f\nvt %f %f\nvt %f %f\n",
@@ -696,7 +723,15 @@ int main(int argc, char** argv) {
         texcoords_seen + 4 * i + 3,
         quads[i].vertex_d + 1 + verts_seen,
         texcoords_seen + 4 * i + 4);
+      flat_tris[6 * i + 0] = quads[i].vertex_c;
+      flat_tris[6 * i + 1] = quads[i].vertex_a;
+      flat_tris[6 * i + 2] = quads[i].vertex_b;
+      flat_tris[6 * i + 3] = quads[i].vertex_b;
+      flat_tris[6 * i + 4] = quads[i].vertex_d;
+      flat_tris[6 * i + 5] = quads[i].vertex_c;
     }
+    flat_tri_table[j] = flat_tris;
+    flat_tri_counts[j] = 6 * num_quads_read + 3 * num_tris_read;
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
       printf("f %d/%d %d/%d %d/%d\n",
@@ -706,11 +741,19 @@ int main(int argc, char** argv) {
         texcoords_seen + 4 * num_quads_read + 3 * i + 2,
         tris[i].vertex_c + 1 + verts_seen,
         texcoords_seen + 4 * num_quads_read + 3 * i + 3);
+      flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a;
+      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_b;
+      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_c;
     }
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
   }
-  make_epic_gltf_file(flat_vert_table[0], flat_vert_counts[0]);
+  make_epic_gltf_file(
+    flat_vert_table[0],
+    flat_vert_counts[0],
+    flat_tri_table[0],
+    flat_tri_counts[0]
+  );
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
   save_png_texture_with_palette(&tex, argv[5], 1, 0xfe);
