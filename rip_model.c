@@ -77,6 +77,50 @@ void die(char* message) {
   exit(1);
 }
 
+uint8_t base64_table[64] = {
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+  'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+  'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+  'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+  'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+  'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+  'w', 'x', 'y', 'z', '0', '1', '2', '3',
+  '4', '5', '6', '7', '8', '9', '+', '/'
+};
+
+char* base64_encode(unsigned char* bytes, size_t size) {
+  char* buf = malloc(4 * (size / 3) + 1);
+  buf[4 * (size / 3)] = '\0';
+  for (int i = 0; i < size / 3; i++) {
+    buf[4 * i + 0] = base64_table[
+      bytes[3 * i + 0] >> 2
+    ];
+    buf[4 * i + 1] = base64_table[
+      ((bytes[3 * i + 0] & 0x03) << 4) |
+      (bytes[3 * i + 1] >> 4)
+    ];
+    buf[4 * i + 2] = base64_table[
+      ((bytes[3 * i + 1] & 0x0f) << 2) |
+      (bytes[3 * i + 2] >> 6)
+    ];
+    buf[4 * i + 3] = base64_table[
+      bytes[3 * i + 2] & 0x3f
+    ];
+  }
+  return buf;
+}
+
+char* octet_stream_encode(void* bytes, size_t size) {
+  static char* header = "data:application/octet-stream;base64,";
+  char* buf = malloc(4 * (size / 3) + strlen(header) + 1);
+  strcpy(buf, header);
+  char* encoded = base64_encode(bytes, size);
+  fprintf(stderr, "%s\n", encoded);
+  strcat(buf, encoded);
+  free(encoded);
+  return buf;
+}
+
 uint16_t fake_palette[16] = {
   0x0001, 0x0421, 0x0842, 0x0c63,
   0x1084, 0x14a5, 0x18c6, 0x1ce7,
@@ -412,14 +456,14 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file() {
+void make_epic_gltf_file(float* vertices, size_t vertex_count) {
+  char* vertex_encoded = octet_stream_encode(vertices, 4 * 3 * vertex_count);
   cgltf_buffer buffers[2] = {
     {
       .name = "vertex_buffer",
-      .size = 36,
+      .size = 4 * 3 * vertex_count,
       // 3 vertices of 3 floats each, 3 * 3 * 4 = 36 bytes
-      .uri =
-      "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      .uri = vertex_encoded
     },
     {
       .name = "vertex_index_buffer",
@@ -433,7 +477,7 @@ void make_epic_gltf_file() {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
       .offset = 0,
-      .size = 36,
+      .size = 4 * 3 * vertex_count,
       .stride = 0, // Automatically determined by accessor
       .type = cgltf_buffer_view_type_vertices
     },
@@ -593,17 +637,27 @@ int main(int argc, char** argv) {
       new_model.face_offsets[i]);
   }
 
+  float* flat_vert_table[new_model.object_count];
+  memset(flat_vert_table, 0, new_model.object_count * sizeof(float*));
+  size_t flat_vert_counts[new_model.object_count];
+  memset(flat_vert_counts, 0, new_model.object_count * sizeof(size_t));
   for (int j = 0; j < new_model.object_count; j++) {
     printf("o %d\n", j);
     uint32_t num_read;
     vertex_t* verts;
     verts = load_vertices(&new_model, j, &num_read);
+    float* flat_verts = calloc(num_read, 3 * sizeof(float));
+    flat_vert_table[j] = flat_verts;
+    flat_vert_counts[j] = num_read;
     for (int i = 0; i < num_read; i++) {
       vertex_t v = transform_vertex(verts[i], &new_model, &animation, j, frame);
       printf("v %f %f %f\n",
         v.x / 4096.0,
         v.y / 4096.0,
         v.z / 4096.0);
+      flat_verts[3 * i + 0] = v.x / 4096.0;
+      flat_verts[3 * i + 1] = v.y / 4096.0;
+      flat_verts[3 * i + 2] = v.z / 4096.0;
     }
     uint32_t num_quads_read;
     uint32_t num_tris_read;
@@ -656,7 +710,7 @@ int main(int argc, char** argv) {
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
   }
-  make_epic_gltf_file();
+  make_epic_gltf_file(flat_vert_table[0], flat_vert_counts[0]);
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
   save_png_texture_with_palette(&tex, argv[5], 1, 0xfe);
