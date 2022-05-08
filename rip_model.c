@@ -456,9 +456,18 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float* vertices, size_t vertex_count, uint32_t*
-tri_indices, size_t triangle_count) {
-  char* vertex_encoded = octet_stream_encode(vertices, 4 * 3 * vertex_count);
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t* tri_indices, size_t triangle_count, size_t object_count) {
+  size_t total_vertices = 0;
+  for (int i = 0; i < object_count; i++) {
+    total_vertices += vertex_count[i];
+  }
+  float* all_vertices = malloc(sizeof(float) * 3 * total_vertices);
+  size_t vertex_array_offset = 0;
+  for (int i = 0; i < object_count; i++) {
+    memcpy(&all_vertices[vertex_array_offset], vertices[i], 4 * 3 * vertex_count[i]);
+    vertex_array_offset += 3 * vertex_count[i];
+  }
+  char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(tri_indices, 4 * 3 * triangle_count);
   float min_x = +999999;
   float min_y = +999999;
@@ -466,10 +475,10 @@ tri_indices, size_t triangle_count) {
   float max_x = -999999;
   float max_y = -999999;
   float max_z = -999999;
-  for (int i = 0; i < vertex_count; i++) {
-    float vx = vertices[3 * i + 0];
-    float vy = vertices[3 * i + 1];
-    float vz = vertices[3 * i + 2];
+  for (int i = 0; i < total_vertices; i++) {
+    float vx = all_vertices[3 * i + 0];
+    float vy = all_vertices[3 * i + 1];
+    float vz = all_vertices[3 * i + 2];
     fprintf(stderr, "Consider the following: %f %f %f\n", vx, vy, vz);
     if (vx < min_x) min_x = vx;
     if (vx > max_x) max_x = vx;
@@ -481,7 +490,7 @@ tri_indices, size_t triangle_count) {
   cgltf_buffer buffers[2] = {
     {
       .name = "vertex_buffer",
-      .size = 4 * 3 * vertex_count,
+      .size = 4 * 3 * total_vertices,
       .uri = vertex_encoded
     },
     {
@@ -496,7 +505,7 @@ tri_indices, size_t triangle_count) {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
       .offset = 0,
-      .size = 4 * 3 * vertex_count,
+      .size = 4 * 3 * total_vertices,
       .stride = 0, // Automatically determined by accessor
       .type = cgltf_buffer_view_type_vertices
     },
@@ -515,7 +524,7 @@ tri_indices, size_t triangle_count) {
       .component_type = cgltf_component_type_r_32f,
       .type = cgltf_type_vec3,
       .offset = 0,
-      .count = vertex_count,
+      .count = total_vertices,
       .stride = 12, // 3 * 32 bit
       .buffer_view = &buffer_views[0],
       .has_min = 1,
@@ -749,10 +758,11 @@ int main(int argc, char** argv) {
     verts_seen += num_read;
   }
   make_epic_gltf_file(
-    flat_vert_table[0],
-    flat_vert_counts[0],
+    flat_vert_table,
+    flat_vert_counts,
     flat_tri_table[0],
-    flat_tri_counts[0]
+    flat_tri_counts[0],
+    new_model.object_count
   );
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
