@@ -456,7 +456,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t* tri_indices, size_t triangle_count, size_t object_count) {
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, size_t object_count) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -467,8 +467,20 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t* tri_i
     memcpy(&all_vertices[vertex_array_offset], vertices[i], 4 * 3 * vertex_count[i]);
     vertex_array_offset += 3 * vertex_count[i];
   }
+
+  size_t total_triangles = 0;
+  for (int i = 0; i < object_count; i++) {
+    total_triangles += triangle_count[i];
+  }
+  uint32_t* all_triangles = malloc(sizeof(uint32_t) * 3 * total_triangles);
+  size_t index_array_offset = 0;
+  for (int i = 0; i < object_count; i++) {
+    memcpy(&all_triangles[index_array_offset], tri_indices[i], 4 * 3 * triangle_count[i]);
+    index_array_offset += 3 * triangle_count[i];
+  }
+
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
-  char* index_encoded = octet_stream_encode(tri_indices, 4 * 3 * triangle_count);
+  char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
   float min_x = +999999;
   float min_y = +999999;
   float min_z = +999999;
@@ -495,7 +507,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t* tri_i
     },
     {
       .name = "vertex_index_buffer",
-      .size = 4 * 3 * triangle_count,
+      .size = 4 * 3 * total_triangles,
       // 3 indices of 32-bit size, little-endian, "0 1 2"
       .uri = index_encoded
     }
@@ -513,7 +525,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t* tri_i
       .name = "vertex_index_buffer_view",
       .buffer = &buffers[1],
       .offset = 0,
-      .size = 4 * 3 * triangle_count,
+      .size = 4 * 3 * total_triangles,
       .stride = 0, // Automatically determined by accessor
       .type = cgltf_buffer_view_type_indices
     }
@@ -536,7 +548,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t* tri_i
       .normalized = 0, // ???
       .type = cgltf_type_scalar,
       .offset = 0,
-      .count = 3 * triangle_count,
+      .count = 3 * total_triangles,
       .stride = 4, // 32 bit
       .buffer_view = &buffer_views[1],
       .has_min = 0,
@@ -732,12 +744,12 @@ int main(int argc, char** argv) {
         texcoords_seen + 4 * i + 3,
         quads[i].vertex_d + 1 + verts_seen,
         texcoords_seen + 4 * i + 4);
-      flat_tris[6 * i + 0] = quads[i].vertex_c;
-      flat_tris[6 * i + 1] = quads[i].vertex_b;
-      flat_tris[6 * i + 2] = quads[i].vertex_a;
-      flat_tris[6 * i + 3] = quads[i].vertex_b;
-      flat_tris[6 * i + 4] = quads[i].vertex_c;
-      flat_tris[6 * i + 5] = quads[i].vertex_d;
+      flat_tris[6 * i + 0] = quads[i].vertex_c + verts_seen;
+      flat_tris[6 * i + 1] = quads[i].vertex_b + verts_seen;
+      flat_tris[6 * i + 2] = quads[i].vertex_a + verts_seen;
+      flat_tris[6 * i + 3] = quads[i].vertex_b + verts_seen;
+      flat_tris[6 * i + 4] = quads[i].vertex_c + verts_seen;
+      flat_tris[6 * i + 5] = quads[i].vertex_d + verts_seen;
     }
     flat_tri_table[j] = flat_tris;
     flat_tri_counts[j] = 2 * num_quads_read + num_tris_read;
@@ -750,9 +762,9 @@ int main(int argc, char** argv) {
         texcoords_seen + 4 * num_quads_read + 3 * i + 2,
         tris[i].vertex_c + 1 + verts_seen,
         texcoords_seen + 4 * num_quads_read + 3 * i + 3);
-      flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a;
-      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c;
-      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b;
+      flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a + verts_seen;
+      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c + verts_seen;
+      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b + verts_seen;
     }
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
@@ -760,8 +772,8 @@ int main(int argc, char** argv) {
   make_epic_gltf_file(
     flat_vert_table,
     flat_vert_counts,
-    flat_tri_table[0],
-    flat_tri_counts[0],
+    flat_tri_table,
+    flat_tri_counts,
     new_model.object_count
   );
   paletted_texture_t tex = load_texture(&new_model);
