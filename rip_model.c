@@ -457,9 +457,9 @@ model_t load_model(iso_t* iso, uint32_t sector) {
 }
 
 void make_epic_gltf_file(float* vertices, size_t vertex_count, uint32_t*
-tri_indices, size_t tri_index_count) {
+tri_indices, size_t triangle_count) {
   char* vertex_encoded = octet_stream_encode(vertices, 4 * 3 * vertex_count);
-  char* index_encoded = octet_stream_encode(tri_indices, 4 * 3 * tri_index_count);
+  char* index_encoded = octet_stream_encode(tri_indices, 4 * 3 * triangle_count);
   float min_x = +999999;
   float min_y = +999999;
   float min_z = +999999;
@@ -486,7 +486,7 @@ tri_indices, size_t tri_index_count) {
     },
     {
       .name = "vertex_index_buffer",
-      .size = 4 * 3 * tri_index_count,
+      .size = 4 * 3 * triangle_count,
       // 3 indices of 32-bit size, little-endian, "0 1 2"
       .uri = index_encoded
     }
@@ -504,7 +504,7 @@ tri_indices, size_t tri_index_count) {
       .name = "vertex_index_buffer_view",
       .buffer = &buffers[1],
       .offset = 0,
-      .size = 4 * 3 * tri_index_count,
+      .size = 4 * 3 * triangle_count,
       .stride = 0, // Automatically determined by accessor
       .type = cgltf_buffer_view_type_indices
     }
@@ -527,7 +527,7 @@ tri_indices, size_t tri_index_count) {
       .normalized = 0, // ???
       .type = cgltf_type_scalar,
       .offset = 0,
-      .count = tri_index_count,
+      .count = 3 * triangle_count,
       .stride = 4, // 32 bit
       .buffer_view = &buffer_views[1],
       .has_min = 0,
@@ -731,7 +731,7 @@ int main(int argc, char** argv) {
       flat_tris[6 * i + 5] = quads[i].vertex_d;
     }
     flat_tri_table[j] = flat_tris;
-    flat_tri_counts[j] = 6 * num_quads_read + 3 * num_tris_read;
+    flat_tri_counts[j] = 2 * num_quads_read + num_tris_read;
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
       printf("f %d/%d %d/%d %d/%d\n",
