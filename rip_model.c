@@ -724,11 +724,11 @@ int main(int argc, char** argv) {
         quads[i].vertex_d + 1 + verts_seen,
         texcoords_seen + 4 * i + 4);
       flat_tris[6 * i + 0] = quads[i].vertex_c;
-      flat_tris[6 * i + 1] = quads[i].vertex_a;
-      flat_tris[6 * i + 2] = quads[i].vertex_b;
+      flat_tris[6 * i + 1] = quads[i].vertex_b;
+      flat_tris[6 * i + 2] = quads[i].vertex_a;
       flat_tris[6 * i + 3] = quads[i].vertex_b;
-      flat_tris[6 * i + 4] = quads[i].vertex_d;
-      flat_tris[6 * i + 5] = quads[i].vertex_c;
+      flat_tris[6 * i + 4] = quads[i].vertex_c;
+      flat_tris[6 * i + 5] = quads[i].vertex_d;
     }
     flat_tri_table[j] = flat_tris;
     flat_tri_counts[j] = 6 * num_quads_read + 3 * num_tris_read;
@@ -742,8 +742,8 @@ int main(int argc, char** argv) {
         tris[i].vertex_c + 1 + verts_seen,
         texcoords_seen + 4 * num_quads_read + 3 * i + 3);
       flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a;
-      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_b;
-      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_c;
+      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c;
+      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b;
     }
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
