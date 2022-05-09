@@ -52,15 +52,20 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     // If there's enough bytes left in this sector, we can just read normally
     result = fread(buf, member_size, items, iso->fp);
     if (result != items) {
+      fprintf(stderr, "failure reading normally\n");
       return -1;
     }
     iso->offset += bytes_to_read;
   } else {
     char* temp = malloc(bytes_to_read);
     // Otherwise, we need to split the calls
-    result = fread(temp, remaining_bytes_in_sector, 1, iso->fp);
-    if (result != 1) {
-      return -1;
+    if (remaining_bytes_in_sector > 0) {
+      result = fread(temp, remaining_bytes_in_sector, 1, iso->fp);
+      if (result != 1) {
+        fprintf(stderr, "failure reading init with remaining bytes=%ld\n",
+          remaining_bytes_in_sector);
+        return -1;
+      }
     }
     temp += remaining_bytes_in_sector;
     fseek(iso->fp, 0x130, SEEK_CUR);
@@ -70,6 +75,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     for (int i = 0; i < chunks; i++) {
       result = fread(temp, 0x800, 1, iso->fp);
       if (result != 1) {
+        fprintf(stderr, "failure reading chunk\n");
         return -1;
       }
       temp += 0x800;
@@ -78,6 +84,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     result = fread(temp, margin, 1, iso->fp);
     temp += margin;
     if (result != 1) {
+      fprintf(stderr, "failure reading margin\n");
       return -1;
     }
     iso_seek_forward(iso, bytes_to_read);

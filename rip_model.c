@@ -428,14 +428,16 @@ float* serialize_animation(animation_t* animation, uint32_t object) {
   iso_seek_to_sector(animation->iso, animation->file_sector);
   iso_seek_forward(animation->iso, offset);
   matrix_t m;
+  // Does the file have a frame count or is it always 30?
   for (int frame = 0; frame < 30; frame++) {
     size_t items_read = iso_fread(
       animation->iso,
       &m,
       sizeof(matrix_t),
-      1); // Does the file have a frame count or is it always 30?
+      1);
     if (items_read != 1) {
-      die("fread failure, an error occured or EOF (matrix)");
+      fprintf(stderr, "items read: %lu\n", items_read);
+      die("fread failure, an error occured or EOF (rotation matrix)");
     }
     fmatrix_t fm = matrix_to_fmatrix(m);
     quaternion_t q = matrix_to_quaternion(fm);
@@ -589,7 +591,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, uint32_t* node_tree, size_t object_count) {
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, animation_t* animation, uint32_t* node_tree, size_t object_count) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -612,9 +614,13 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     index_array_offset += 3 * triangle_count[i];
   }
 
+  // Get the animation for object 0
+  float* anim = serialize_animation(animation, 0);
+
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
-  cgltf_buffer buffers[2] = {
+  char* animation_encoded = octet_stream_encode(anim, 30 * 4 * sizeof(float));
+  cgltf_buffer buffers[3] = {
     {
       .name = "vertex_buffer",
       .size = 4 * 3 * total_vertices,
@@ -625,9 +631,14 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .size = 4 * 3 * total_triangles,
       // 3 indices of 32-bit size, little-endian, "0 1 2"
       .uri = index_encoded
+    },
+    {
+      .name = "animation_rotation_0",
+      .size = 30 * 4 * sizeof(float),
+      .uri = animation_encoded
     }
   };
-  cgltf_buffer_view buffer_views[2] = {
+  cgltf_buffer_view buffer_views[3] = {
     {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
@@ -643,6 +654,12 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .size = 4 * 3 * total_triangles,
       //.stride = 0,
       .type = cgltf_buffer_view_type_indices
+    },
+    {
+      .name = "animation_rotation_0_view",
+      .buffer = &buffers[2],
+      .offset = 0,
+      .size = 30 * 4 * sizeof(float)
     }
   };
   cgltf_accessor accessors[2 * object_count];
@@ -784,10 +801,10 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.accessors_count = 2 * object_count;
 
   data.buffer_views = buffer_views;
-  data.buffer_views_count = 2;
+  data.buffer_views_count = 3;
 
   data.buffers = buffers;
-  data.buffers_count = 2;
+  data.buffers_count = 3;
 
   data.nodes = nodes;
   data.nodes_count = object_count;
@@ -961,6 +978,7 @@ int main(int argc, char** argv) {
     flat_vert_counts,
     flat_tri_table,
     flat_tri_counts,
+    &animation,
     new_model.node_tree,
     new_model.object_count
   );
