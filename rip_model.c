@@ -620,7 +620,14 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
   char* animation_encoded = octet_stream_encode(anim, 30 * 4 * sizeof(float));
-  cgltf_buffer buffers[3] = {
+
+  float animation_input[30];
+  for (int i = 0; i < 30; i++) {
+    animation_input[i] = (float) (i * 0.0333333); // 30 FPS
+  }
+  char* animation_input_encoded = octet_stream_encode(animation_input, 30 * sizeof(float));
+
+  cgltf_buffer buffers[4] = {
     {
       .name = "vertex_buffer",
       .size = 4 * 3 * total_vertices,
@@ -633,12 +640,17 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .uri = index_encoded
     },
     {
-      .name = "animation_rotation_0",
+      .name = "animation_rotation_input",
+      .size = 30 * sizeof(float),
+      .uri = animation_input_encoded
+    },
+    {
+      .name = "animation_rotation_0_output",
       .size = 30 * 4 * sizeof(float),
       .uri = animation_encoded
     }
   };
-  cgltf_buffer_view buffer_views[3] = {
+  cgltf_buffer_view buffer_views[4] = {
     {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
@@ -656,13 +668,19 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .type = cgltf_buffer_view_type_indices
     },
     {
-      .name = "animation_rotation_0_view",
+      .name = "animation_rotation_0_input",
       .buffer = &buffers[2],
+      .offset = 0,
+      .size = 30 * sizeof(float)
+    },
+    {
+      .name = "animation_rotation_0_output_view",
+      .buffer = &buffers[3],
       .offset = 0,
       .size = 30 * 4 * sizeof(float)
     }
   };
-  cgltf_accessor accessors[2 * object_count];
+  cgltf_accessor accessors[2 * object_count + 2];
   size_t object_vertex_offset = 0;
   for (int i = 0; i < object_count; i++) {
     accessors[i] = (cgltf_accessor) {
@@ -721,6 +739,32 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     accessor_offset += 4 * 3 * triangle_count[i];
   }
 
+  accessors[2 * object_count] = (cgltf_accessor) {
+    .name = "animation_rotation_0_input",
+    .component_type = cgltf_component_type_r_32f,
+    .normalized = 0,
+    .type = cgltf_type_scalar,
+    .offset = 0,
+    .count = 30,
+    .stride = 4,
+    .buffer_view = &buffer_views[2],
+    .has_min = 1,
+    .has_max = 1
+  };
+  accessors[2 * object_count].min[0] = 0;
+  accessors[2 * object_count].max[0] = 29 * 0.0333333;
+
+  accessors[2 * object_count + 1] = (cgltf_accessor) {
+    .name = "animation_rotation_0_output",
+    .component_type = cgltf_component_type_r_32f,
+    .normalized = 0,
+    .type = cgltf_type_vec4,
+    .offset = 0,
+    .count = 30,
+    .stride = 16,
+    .buffer_view = &buffer_views[3]
+  };
+
   cgltf_attribute attributes[object_count];
   for (int i = 0; i < object_count; i++) {
     attributes[i] = (cgltf_attribute) {
@@ -748,6 +792,13 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .primitives_count = 1
     };
   }
+
+  cgltf_animation_sampler samplers[1];
+  samplers[0] = (cgltf_animation_sampler) {
+    .input = &accessors[2 * object_count],
+    .output = &accessors[2 * object_count + 1],
+    .interpolation = cgltf_interpolation_type_step
+  };
 
   cgltf_node nodes[object_count];
   for (int i = 0; i < object_count; i++) {
@@ -784,6 +835,22 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     node_pointers[i] = &nodes[i];
   }
 
+  cgltf_animation_channel channels[1];
+  channels[0] = (cgltf_animation_channel) {
+    .sampler = &samplers[0],
+    .target_node = &nodes[0],
+    .target_path = cgltf_animation_path_type_rotation
+  };
+
+  cgltf_animation animations[1];
+  animations[0] = (cgltf_animation) {
+    .name = "animation_rotation_0",
+    .samplers = samplers,
+    .samplers_count = 1,
+    .channels = channels,
+    .channels_count = 1
+  };
+
   // TODO: Scene should only contain root nodes
   cgltf_scene scenes[1] = {
     {
@@ -797,14 +864,17 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.meshes = meshes;
   data.meshes_count = object_count;
 
+  data.animations = animations;
+  data.animations_count = 1;
+
   data.accessors = accessors;
-  data.accessors_count = 2 * object_count;
+  data.accessors_count = 2 * object_count + 2;
 
   data.buffer_views = buffer_views;
-  data.buffer_views_count = 3;
+  data.buffer_views_count = 4;
 
   data.buffers = buffers;
-  data.buffers_count = 3;
+  data.buffers_count = 4;
 
   data.nodes = nodes;
   data.nodes_count = object_count;
