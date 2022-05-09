@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <png.h>
+#include <math.h>
 
 #include "iso_reader.h"
 #define CGLTF_WRITE_IMPLEMENTATION
@@ -355,6 +356,107 @@ vertex_t translate(vertex_t a, vertex_t b) {
   };
 }
 
+typedef struct quaternion_s {
+  float w;
+  float x;
+  float y;
+  float z;
+} quaternion_t;
+
+typedef struct fmatrix_s {
+  float x[9];
+} fmatrix_t;
+
+fmatrix_t matrix_to_fmatrix(matrix_t m) {
+  fmatrix_t fm;
+  fm.x[0] = m.x[0] / 4096.0;
+  fm.x[1] = m.x[1] / 4096.0;
+  fm.x[2] = m.x[2] / 4096.0;
+  fm.x[3] = m.x[3] / 4096.0;
+  fm.x[4] = m.x[4] / 4096.0;
+  fm.x[5] = m.x[5] / 4096.0;
+  fm.x[6] = m.x[6] / 4096.0;
+  fm.x[7] = m.x[7] / 4096.0;
+  fm.x[8] = m.x[8] / 4096.0;
+  return fm;
+}
+
+quaternion_t matrix_to_quaternion(fmatrix_t m) {
+  float trace = m.x[0] + m.x[4] + m.x[8];
+  if (trace > 0) {
+    float S = sqrt(trace + 1.0) * 2;
+    quaternion_t q = {
+      .w = 0.25 * S,
+      .x = (m.x[5] - m.x[7]) / S,
+      .y = (m.x[6] - m.x[2]) / S,
+      .z = (m.x[1] - m.x[3]) / S
+    };
+    return q;
+  } else if ((m.x[0] > m.x[4]) && (m.x[0] > m.x[8])) {
+    float S = sqrt(1.0 + m.x[0] - m.x[4] - m.x[8]) * 2;
+    quaternion_t q = {
+      .w = (m.x[5] - m.x[7]) / S,
+      .x = (m.x[3] + m.x[1]) / S,
+      .y = 0.25 * S,
+      .z = (m.x[7] + m.x[5]) / S
+    };
+    return q;
+  } else if (m.x[4] > m.x[8]) {
+    float S = sqrt(1.0 + m.x[4] - m.x[0] - m.x[8]) * 2;
+    quaternion_t q = {
+      .w = (m.x[6] - m.x[2]) / S,
+      .x = (m.x[3] + m.x[1]) / S,
+      .y = 0.25 * S,
+      .z = (m.x[7] + m.x[5]) / S
+    };
+    return q;
+  } else {
+    float S = sqrt(1.0 + m.x[8] - m.x[0] - m.x[4]) * 2;
+    quaternion_t q = {
+      .w = (m.x[1] - m.x[3]) / S,
+      .x = (m.x[6] + m.x[2]) / S,
+      .y = (m.x[7] + m.x[5]) / S,
+      .z = 0.25 * S
+    };
+    return q;
+  }
+}
+
+float* serialize_animation(animation_t* animation, uint32_t object) {
+  float* rotation = malloc(30 * 16); // 30 quaternions, each quaternion is 4 floats
+  uint32_t offset = animation->offsets[object];
+  iso_seek_to_sector(animation->iso, animation->file_sector);
+  iso_seek_forward(animation->iso, offset);
+  matrix_t m;
+  for (int frame = 0; frame < 30; frame++) {
+    size_t items_read = iso_fread(
+      animation->iso,
+      &m,
+      sizeof(matrix_t),
+      1); // Does the file have a frame count or is it always 30?
+    if (items_read != 1) {
+      die("fread failure, an error occured or EOF (matrix)");
+    }
+    fmatrix_t fm = matrix_to_fmatrix(m);
+    quaternion_t q = matrix_to_quaternion(fm);
+    vertex_t translation = {0};
+    items_read = iso_fread(
+      animation->iso,
+      &translation,
+      sizeof(vertex_t),
+      1);
+    if (items_read != 1) {
+      die("fread failure, an error occured or EOF (translation)");
+    }
+    // Spec says component order is XYZW
+    rotation[frame * 4 + 0] = q.x;
+    rotation[frame * 4 + 1] = q.y;
+    rotation[frame * 4 + 2] = q.z;
+    rotation[frame * 4 + 3] = q.w;
+  }
+  return rotation;
+}
+
 // We transform a vertex by looking up its object's transform matrix and
 // translation on the given frame number, and then potentially recursing with the parent object
 vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, uint32_t object, uint32_t frame) {
@@ -385,6 +487,18 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
     die("alignment issue");
   }
   vertex_t v_rotated = rotate(m, v);
+  quaternion_t q = matrix_to_quaternion(matrix_to_fmatrix(m));
+  fprintf(stderr, "Rotating with a quaternion: %f + %fi + %fj + %fk\n",
+    q.w,
+    q.x,
+    q.y,
+    q.z);
+  /*
+  fprintf(stderr, "Matrix: %f %f %f %f %f %f %f %f %f\n",
+    m.x[0], m.x[1], m.x[2],
+    m.x[3], m.x[4], m.x[5],
+    m.x[6], m.x[7], m.x[8]);
+  */
   vertex_t v_translated = translate(translation, v_rotated);
   if (model->skeleton[object] > 0) {
     uint32_t parent = -1;
@@ -653,6 +767,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     node_pointers[i] = &nodes[i];
   }
 
+  // TODO: Scene should only contain root nodes
   cgltf_scene scenes[1] = {
     {
       .name = "scene",
@@ -832,6 +947,14 @@ int main(int argc, char** argv) {
     }
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
+    float* anim = serialize_animation(&animation, j);
+    for (int frame = 0; frame < 30; frame++) {
+      fprintf(stderr, "Serialized quaternion: %f + %fi + %fj + %fk\n",
+        anim[frame * 4 + 3],
+        anim[frame * 4 + 0],
+        anim[frame * 4 + 1],
+        anim[frame * 4 + 2]);
+    }
   }
   make_epic_gltf_file(
     flat_vert_table,
