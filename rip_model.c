@@ -496,7 +496,6 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
     die("alignment issue");
   }
   vertex_t v_rotated = rotate(m, v);
-  quaternion_t q = matrix_to_quaternion(matrix_to_fmatrix(m));
   vertex_t v_translated = translate(translation, v_rotated);
   if (model->skeleton[object] > 0) {
     uint32_t parent = -1;
