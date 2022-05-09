@@ -213,9 +213,11 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
   for (int i = 0; i < 16384; i++) {
     uint8_t lower = tex->texture[i] & 0x0f;
     uint8_t upper = (tex->texture[i] & 0xf0) >> 4;
-    uint16_t* palette = &tex->texture[row * stride + column * 32];
-    uint16_t color_lower = palette[lower];
-    uint16_t color_upper = palette[upper];
+    uint8_t* palette = &tex->texture[row * stride + column * 32];
+    uint16_t color_lower;
+    uint16_t color_upper;
+    memcpy(&color_lower, &palette[2 * lower], sizeof(uint16_t));
+    memcpy(&color_upper, &palette[2 * upper], sizeof(uint16_t));
 
     expanded[6 * i + 0] = (color_lower & 0x001f) << 3;
     expanded[6 * i + 1] = (color_lower & 0x03e0) >> 2;
