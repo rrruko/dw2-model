@@ -168,7 +168,10 @@ uint8_t* expand_texture_rgb(paletted_texture_t* tex) {
   return expanded;
 }
 
-void save_png_texture(paletted_texture_t* tex, char* filename) {
+#define PNG_BUFFER_SIZE 1048576
+unsigned char* png_buffer[PNG_BUFFER_SIZE];
+
+png_alloc_size_t save_png_texture(paletted_texture_t* tex, char* filename) {
   png_image png;
   memset(&png, 0, sizeof(png_image));
   png.version = PNG_IMAGE_VERSION;
@@ -185,6 +188,16 @@ void save_png_texture(paletted_texture_t* tex, char* filename) {
     texture_expanded,
     0 /* row_stride */,
     NULL /* colormap */);
+
+  png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
+  png_image_write_to_memory(
+    &png,
+    png_buffer,
+    &memory_bytes,
+    0,
+    texture_expanded,
+    0,
+    NULL);
 
   png_image rgb_png;
   memset(&rgb_png, 0, sizeof(png_image));
@@ -205,6 +218,8 @@ void save_png_texture(paletted_texture_t* tex, char* filename) {
     texture_expanded_rgb,
     0 /* row_stride */,
     NULL /* colormap */);
+
+  return memory_bytes;
 }
 
 uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_t row) {
@@ -231,7 +246,7 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
 
 char* googa = "googa.png";
 
-void save_png_texture_with_palette(paletted_texture_t* tex, char* dontcare, uint8_t column, uint8_t row) {
+png_alloc_size_t save_png_texture_with_palette(paletted_texture_t* tex, char* dontcare, uint8_t column, uint8_t row) {
   png_image png;
   memset(&png, 0, sizeof(png_image));
   png.version = PNG_IMAGE_VERSION;
@@ -258,6 +273,17 @@ void save_png_texture_with_palette(paletted_texture_t* tex, char* dontcare, uint
     texture_expanded,
     0,
     NULL);
+
+  png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
+  png_image_write_to_memory(
+    &png,
+    png_buffer,
+    &memory_bytes,
+    0,
+    texture_expanded,
+    0,
+    NULL);
+  return memory_bytes;
 }
 
 vertex_t* load_vertices(model_t* model, uint32_t object, uint32_t* num_read) {
@@ -596,7 +622,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, animation_t* animation, int32_t* node_tree, size_t object_count) {
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animation, int32_t* node_tree, size_t object_count) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -619,6 +645,17 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     index_array_offset += 3 * triangle_count[i];
   }
 
+  size_t total_texcoords = 0;
+  for (int i = 0; i < object_count; i++) {
+    total_texcoords += texcoord_count[i];
+  }
+  float* all_texcoords = malloc(sizeof(float) * 2 * total_texcoords);
+  size_t texcoord_array_offset = 0;
+  for (int i = 0; i < object_count; i++) {
+    memcpy(&all_texcoords[texcoord_array_offset], texcoords[i], 4 * 2 * texcoord_count[i]);
+    texcoord_array_offset += 2 * texcoord_count[i];
+  }
+
   // Get all the animations
   float* rotation_anim;
   float* translation_anim;
@@ -631,13 +668,15 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   char* translation_encoded = octet_stream_encode(translation_anim,
     object_count * 30 * 3 * sizeof(float));
 
+  char* texcoord_encoded = octet_stream_encode(all_texcoords, 4 * 2 * total_texcoords);
+
   float animation_input[30];
   for (int i = 0; i < 30; i++) {
     animation_input[i] = (float) (i * 0.0333333); // 30 FPS
   }
   char* animation_input_encoded = octet_stream_encode(animation_input, 30 * sizeof(float));
 
-  cgltf_buffer buffers[5] = {
+  cgltf_buffer buffers[6] = {
     {
       .name = "vertex_buffer",
       .size = 4 * 3 * total_vertices,
@@ -663,9 +702,14 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .name = "animation_translation_output",
       .size = object_count * 30 * 3 * sizeof(float),
       .uri = translation_encoded
+    },
+    {
+      .name = "texcoord",
+      .size = 4 * 2 * total_texcoords,
+      .uri = texcoord_encoded
     }
   };
-  cgltf_buffer_view buffer_views[5] = {
+  cgltf_buffer_view buffer_views[6] = {
     {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
@@ -701,9 +745,15 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .offset = 0,
       .size = object_count * 30 * 3 * sizeof(float),
       .stride = 12
+    },
+    {
+      .name = "texcoord_view",
+      .buffer = &buffers[5],
+      .offset = 0,
+      .size = 4 * 2 * total_texcoords
     }
   };
-  cgltf_accessor accessors[4 * object_count + 1];
+  cgltf_accessor accessors[5 * object_count + 1];
   size_t object_vertex_offset = 0;
   for (int i = 0; i < object_count; i++) {
     accessors[i] = (cgltf_accessor) {
@@ -785,7 +835,22 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     };
   }
 
-  accessors[4 * object_count] = (cgltf_accessor) {
+  size_t texcoord_offset = 0;
+  for (int i = 0; i < object_count; i++) {
+    accessors[4 * object_count + i] = (cgltf_accessor) {
+      .name = "texcoord",
+      .component_type = cgltf_component_type_r_32f,
+      .normalized = 0,
+      .type = cgltf_type_vec2,
+      .offset = texcoord_offset,
+      .count = texcoord_count[i],
+      .stride = 8,
+      .buffer_view = &buffer_views[5]
+    };
+    texcoord_offset += 4 * 2 * texcoord_count[i];
+  }
+
+  accessors[5 * object_count] = (cgltf_accessor) {
     .name = "animation_rotation_input",
     .component_type = cgltf_component_type_r_32f,
     .normalized = 0,
@@ -797,16 +862,22 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     .has_min = 1,
     .has_max = 1
   };
-  accessors[4 * object_count].min[0] = 0;
-  accessors[4 * object_count].max[0] = 29 * 0.0333333;
+  accessors[5 * object_count].min[0] = 0;
+  accessors[5 * object_count].max[0] = 29 * 0.0333333;
 
-  cgltf_attribute attributes[object_count];
+  cgltf_attribute attributes[2 * object_count];
   for (int i = 0; i < object_count; i++) {
-    attributes[i] = (cgltf_attribute) {
+    attributes[2 * i] = (cgltf_attribute) {
       .name = "POSITION",
       .type = cgltf_attribute_type_position,
       .index = 0,
       .data = &accessors[i]
+    };
+    attributes[2 * i + 1] = (cgltf_attribute) {
+      .name = "TEXCOORD_0",
+      .type = cgltf_attribute_type_texcoord,
+      .index = 0,
+      .data = &accessors[4 * object_count + i]
     };
   }
 
@@ -815,8 +886,8 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     prims[i] = (cgltf_primitive) {
       .type = cgltf_primitive_type_triangles,
       .indices = &accessors[i+object_count],
-      .attributes = &attributes[i],
-      .attributes_count = 1
+      .attributes = &attributes[2 * i],
+      .attributes_count = 2
     };
   }
 
@@ -831,13 +902,13 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   cgltf_animation_sampler samplers[2 * object_count];
   for (int i = 0; i < object_count; i++) {
     samplers[i] = (cgltf_animation_sampler) {
-      .input = &accessors[4 * object_count],
+      .input = &accessors[5 * object_count],
       .output = &accessors[2 * object_count + i],
       .interpolation = cgltf_interpolation_type_step
     };
 
     samplers[object_count + i] = (cgltf_animation_sampler) {
-      .input = &accessors[4 * object_count],
+      .input = &accessors[5 * object_count],
       .output = &accessors[3 * object_count + i],
       .interpolation = cgltf_interpolation_type_step
     };
@@ -923,13 +994,13 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.animations_count = 1;
 
   data.accessors = accessors;
-  data.accessors_count = 4 * object_count + 1;
+  data.accessors_count = 5 * object_count + 1;
 
   data.buffer_views = buffer_views;
-  data.buffer_views_count = 5;
+  data.buffer_views_count = 6;
 
   data.buffers = buffers;
-  data.buffers_count = 5;
+  data.buffers_count = 6;
 
   data.nodes = nodes;
   data.nodes_count = object_count;
@@ -1015,6 +1086,10 @@ int main(int argc, char** argv) {
   memset(flat_tri_table, 0, new_model.object_count * sizeof(uint32_t*));
   size_t flat_tri_counts[new_model.object_count];
   memset(flat_tri_counts, 0, new_model.object_count * sizeof(size_t));
+  float* texcoord_table[new_model.object_count];
+  memset(texcoord_table, 0, new_model.object_count * sizeof(float*));
+  size_t texcoord_counts[new_model.object_count];
+  memset(texcoord_counts, 0, new_model.object_count * sizeof(size_t));
   for (int j = 0; j < new_model.object_count; j++) {
     printf("o %d\n", j);
     uint32_t num_read;
@@ -1041,6 +1116,10 @@ int main(int argc, char** argv) {
       num_quads_read * 2 + num_tris_read,
       3 * sizeof(uint32_t)
     );
+    float* texcoords = calloc(
+      6 * (num_quads_read * 2 + num_tris_read),
+      sizeof(float)
+    );
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
       printf("vt %f %f\nvt %f %f\nvt %f %f\nvt %f %f\n",
@@ -1052,6 +1131,18 @@ int main(int argc, char** argv) {
         quads[i].tex_b_y / 256.0,
         quads[i].tex_d_x / 128.0,
         quads[i].tex_d_y / 256.0);
+      texcoords[12 * i +  0] = quads[i].tex_c_x / 128.0;
+      texcoords[12 * i +  1] = quads[i].tex_c_y / 256.0;
+      texcoords[12 * i +  2] = quads[i].tex_b_x / 128.0;
+      texcoords[12 * i +  3] = quads[i].tex_b_y / 256.0;
+      texcoords[12 * i +  4] = quads[i].tex_a_x / 128.0;
+      texcoords[12 * i +  5] = quads[i].tex_a_y / 256.0;
+      texcoords[12 * i +  6] = quads[i].tex_b_x / 128.0;
+      texcoords[12 * i +  7] = quads[i].tex_b_y / 256.0;
+      texcoords[12 * i +  8] = quads[i].tex_c_x / 128.0;
+      texcoords[12 * i +  9] = quads[i].tex_c_y / 256.0;
+      texcoords[12 * i + 10] = quads[i].tex_d_x / 128.0;
+      texcoords[12 * i + 11] = quads[i].tex_d_y / 256.0;
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
@@ -1062,6 +1153,12 @@ int main(int argc, char** argv) {
         tris[i].tex_b_y / 256.0,
         tris[i].tex_c_x / 128.0,
         tris[i].tex_c_y / 256.0);
+      texcoords[6 * i + 0 + (12 * num_quads_read)] = tris[i].tex_a_x / 128.0;
+      texcoords[6 * i + 1 + (12 * num_quads_read)] = tris[i].tex_a_y / 256.0;
+      texcoords[6 * i + 2 + (12 * num_quads_read)] = tris[i].tex_c_x / 128.0;
+      texcoords[6 * i + 3 + (12 * num_quads_read)] = tris[i].tex_c_y / 256.0;
+      texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 128.0;
+      texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 256.0;
     }
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
@@ -1096,6 +1193,8 @@ int main(int argc, char** argv) {
       flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c;
       flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b;
     }
+    texcoord_table[j] = texcoords;
+    texcoord_counts[j] = num_quads_read * 6 + num_tris_read * 3;
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
   }
@@ -1104,6 +1203,8 @@ int main(int argc, char** argv) {
     flat_vert_counts,
     flat_tri_table,
     flat_tri_counts,
+    texcoord_table,
+    texcoord_counts,
     &animation,
     new_model.node_tree,
     new_model.object_count
