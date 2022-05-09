@@ -481,24 +481,6 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
 
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
-  float min_x = +999999;
-  float min_y = +999999;
-  float min_z = +999999;
-  float max_x = -999999;
-  float max_y = -999999;
-  float max_z = -999999;
-  for (int i = 0; i < total_vertices; i++) {
-    float vx = all_vertices[3 * i + 0];
-    float vy = all_vertices[3 * i + 1];
-    float vz = all_vertices[3 * i + 2];
-    fprintf(stderr, "Consider the following: %f %f %f\n", vx, vy, vz);
-    if (vx < min_x) min_x = vx;
-    if (vx > max_x) max_x = vx;
-    if (vy < min_y) min_y = vy;
-    if (vy > max_y) max_y = vy;
-    if (vz < min_z) min_z = vz;
-    if (vz > max_z) max_z = vz;
-  }
   cgltf_buffer buffers[2] = {
     {
       .name = "vertex_buffer",
@@ -518,7 +500,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .buffer = &buffers[0],
       .offset = 0,
       .size = 4 * 3 * total_vertices,
-      .stride = 0, // Automatically determined by accessor
+      .stride = 12,
       .type = cgltf_buffer_view_type_vertices
     },
     {
@@ -526,88 +508,132 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .buffer = &buffers[1],
       .offset = 0,
       .size = 4 * 3 * total_triangles,
-      .stride = 0, // Automatically determined by accessor
+      //.stride = 0,
       .type = cgltf_buffer_view_type_indices
     }
   };
-  cgltf_accessor accessors[2] = {
-    {
+  cgltf_accessor accessors[2 * object_count];
+  size_t object_vertex_offset = 0;
+  for (int i = 0; i < object_count; i++) {
+    accessors[i] = (cgltf_accessor) {
       .name = "vertex",
       .component_type = cgltf_component_type_r_32f,
       .type = cgltf_type_vec3,
-      .offset = 0,
-      .count = total_vertices,
+      .offset = object_vertex_offset,
+      .count = vertex_count[i],
       .stride = 12, // 3 * 32 bit
       .buffer_view = &buffer_views[0],
       .has_min = 1,
       .has_max = 1,
-    },
-    {
+    };
+    object_vertex_offset += 12 * vertex_count[i];
+
+    float min_x = +999999;
+    float min_y = +999999;
+    float min_z = +999999;
+    float max_x = -999999;
+    float max_y = -999999;
+    float max_z = -999999;
+    for (int j = 0; j < vertex_count[i]; j++) {
+      float vx = vertices[i][3 * j + 0];
+      float vy = vertices[i][3 * j + 1];
+      float vz = vertices[i][3 * j + 2];
+      if (vx < min_x) min_x = vx;
+      if (vy < min_y) min_y = vy;
+      if (vz < min_z) min_z = vz;
+      if (vx > max_x) max_x = vx;
+      if (vy > max_y) max_y = vy;
+      if (vz > max_z) max_z = vz;
+    }
+    accessors[i].min[0] = min_x;
+    accessors[i].min[1] = min_y;
+    accessors[i].min[2] = min_z;
+    accessors[i].max[0] = max_x;
+    accessors[i].max[1] = max_y;
+    accessors[i].max[2] = max_z;
+  }
+
+  size_t accessor_offset = 0;
+  for (int i = 0; i < object_count; i++) {
+    accessors[i+object_count] = (cgltf_accessor) {
       .name = "vertex_index",
       .component_type = cgltf_component_type_r_32u,
       .normalized = 0, // ???
       .type = cgltf_type_scalar,
-      .offset = 0,
-      .count = 3 * total_triangles,
+      .offset = accessor_offset,
+      .count = 3 * triangle_count[i],
       .stride = 4, // 32 bit
       .buffer_view = &buffer_views[1],
       .has_min = 0,
       .has_max = 0,
       .is_sparse = 0
-    }
-  };
-  accessors[0].min[0] = min_x;
-  accessors[0].min[1] = min_y;
-  accessors[0].min[2] = min_z;
-  accessors[0].max[0] = max_x;
-  accessors[0].max[1] = max_y;
-  accessors[0].max[2] = max_z;
-  cgltf_attribute my_attribute = {
-    .name = "POSITION",
-    .type = cgltf_attribute_type_position,
-    .index = 0,
-    .data = &accessors[0]
-  };
+    };
+    accessor_offset += 4 * 3 * triangle_count[i];
+  }
 
-  cgltf_primitive prim = {0};
-  prim.type = cgltf_primitive_type_triangles;
-  prim.indices = &accessors[1];
-  prim.attributes = (cgltf_attribute*) { &my_attribute };
-  prim.attributes_count = 1;
+  cgltf_attribute attributes[object_count];
+  for (int i = 0; i < object_count; i++) {
+    attributes[i] = (cgltf_attribute) {
+      .name = "POSITION",
+      .type = cgltf_attribute_type_position,
+      .index = 0,
+      .data = &accessors[i]
+    };
+  }
 
-  cgltf_mesh mesh = {0};
-  mesh.primitives = (cgltf_primitive*) { &prim };
-  mesh.primitives_count = 1;
+  cgltf_primitive prims[object_count];
+  for (int i = 0; i < object_count; i++) {
+    prims[i] = (cgltf_primitive) {
+      .type = cgltf_primitive_type_triangles,
+      .indices = &accessors[i+object_count],
+      .attributes = &attributes[i],
+      .attributes_count = 1 
+    };
+  }
 
-  cgltf_node nodes[1] = {
-    {
+  cgltf_mesh meshes[object_count];
+  for (int i = 0; i < object_count; i++) {
+    meshes[i] = (cgltf_mesh) {
+      .primitives = (cgltf_primitive*) { &prims[i] },
+      .primitives_count = 1
+    };
+  }
+
+  cgltf_node nodes[object_count];
+  for (int i = 0; i < object_count; i++) {
+    nodes[i] = (cgltf_node) {
       .name = "node",
       .parent = NULL,
       .children = NULL,
       .children_count = 0,
       .skin = NULL,
-      .mesh = &mesh,
+      .mesh = &meshes[i],
       .has_translation = 1
-    }
-  };
-  nodes[0].translation[0] = 0.0;
-  nodes[0].translation[1] = 0.0;
-  nodes[0].translation[2] = 0.0;
+    };
+    nodes[i].translation[0] = 0.0;
+    nodes[i].translation[1] = 0.0;
+    nodes[i].translation[2] = 0.0;
+  }
+
+  cgltf_node* node_pointers[object_count];
+  for (int i = 0; i < object_count; i++) {
+    node_pointers[i] = &nodes[i];
+  }
 
   cgltf_scene scenes[1] = {
     {
       .name = "scene",
-      .nodes = (cgltf_node*[]) { &nodes[0] },
-      .nodes_count = 1
+      .nodes = node_pointers,
+      .nodes_count = object_count
     }
   };
 
   cgltf_data data = {0};
-  data.meshes = (cgltf_mesh*) { &mesh };
-  data.meshes_count = 1;
+  data.meshes = meshes;
+  data.meshes_count = object_count;
 
   data.accessors = accessors;
-  data.accessors_count = 2;
+  data.accessors_count = 2 * object_count;
 
   data.buffer_views = buffer_views;
   data.buffer_views_count = 2;
@@ -616,7 +642,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.buffers_count = 2;
 
   data.nodes = nodes;
-  data.nodes_count = 1;
+  data.nodes_count = object_count;
 
   data.scenes = scenes;
   data.scenes_count = 1;
@@ -744,12 +770,12 @@ int main(int argc, char** argv) {
         texcoords_seen + 4 * i + 3,
         quads[i].vertex_d + 1 + verts_seen,
         texcoords_seen + 4 * i + 4);
-      flat_tris[6 * i + 0] = quads[i].vertex_c + verts_seen;
-      flat_tris[6 * i + 1] = quads[i].vertex_b + verts_seen;
-      flat_tris[6 * i + 2] = quads[i].vertex_a + verts_seen;
-      flat_tris[6 * i + 3] = quads[i].vertex_b + verts_seen;
-      flat_tris[6 * i + 4] = quads[i].vertex_c + verts_seen;
-      flat_tris[6 * i + 5] = quads[i].vertex_d + verts_seen;
+      flat_tris[6 * i + 0] = quads[i].vertex_c;
+      flat_tris[6 * i + 1] = quads[i].vertex_b;
+      flat_tris[6 * i + 2] = quads[i].vertex_a;
+      flat_tris[6 * i + 3] = quads[i].vertex_b;
+      flat_tris[6 * i + 4] = quads[i].vertex_c;
+      flat_tris[6 * i + 5] = quads[i].vertex_d;
     }
     flat_tri_table[j] = flat_tris;
     flat_tri_counts[j] = 2 * num_quads_read + num_tris_read;
@@ -762,9 +788,9 @@ int main(int argc, char** argv) {
         texcoords_seen + 4 * num_quads_read + 3 * i + 2,
         tris[i].vertex_c + 1 + verts_seen,
         texcoords_seen + 4 * num_quads_read + 3 * i + 3);
-      flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a + verts_seen;
-      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c + verts_seen;
-      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b + verts_seen;
+      flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a;
+      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c;
+      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b;
     }
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
