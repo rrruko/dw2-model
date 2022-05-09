@@ -422,9 +422,11 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   }
 }
 
-float* serialize_animation(animation_t* animation, uint32_t object_count) {
-  float* rotation = malloc(30 * 28 * object_count); // 30 quaternions, each quaternion is 4 floats, plus 30 translation vectors of 3 floats each, times object_count
-  uint32_t object_start = 0;
+void serialize_animation(animation_t* animation, uint32_t object_count, float** rotation_out, float** translation_out) {
+  float* rotation = malloc(30 * 16 * object_count); // 30 quaternions, each quaternion is 4 floats, times object_count
+  float* translation = malloc(30 * 12 * object_count); // 30 translation vectors of 3 floats each, times object_count
+  uint32_t object_start_rot = 0;
+  uint32_t object_start_trans = 0;
   for (int object = 0; object < object_count; object++) {
     uint32_t offset = animation->offsets[object];
     iso_seek_to_sector(animation->iso, animation->file_sector);
@@ -443,27 +445,29 @@ float* serialize_animation(animation_t* animation, uint32_t object_count) {
       }
       fmatrix_t fm = matrix_to_fmatrix(m);
       quaternion_t q = matrix_to_quaternion(fm);
-      vertex_t translation = {0};
+      vertex_t t = {0};
       items_read = iso_fread(
         animation->iso,
-        &translation,
+        &t,
         sizeof(vertex_t),
         1);
       if (items_read != 1) {
         die("fread failure, an error occured or EOF (translation)");
       }
       // Spec says component order is XYZW
-      rotation[object_start + frame * 7 + 0] = q.x;
-      rotation[object_start + frame * 7 + 1] = q.y;
-      rotation[object_start + frame * 7 + 2] = q.z;
-      rotation[object_start + frame * 7 + 3] = q.w;
-      rotation[object_start + frame * 7 + 4] = translation.x / 4096.0;
-      rotation[object_start + frame * 7 + 5] = translation.y / 4096.0;
-      rotation[object_start + frame * 7 + 6] = translation.z / 4096.0;
+      rotation[object_start_rot + frame * 4 + 0] = q.x;
+      rotation[object_start_rot + frame * 4 + 1] = q.y;
+      rotation[object_start_rot + frame * 4 + 2] = q.z;
+      rotation[object_start_rot + frame * 4 + 3] = q.w;
+      translation[object_start_trans + frame * 3 + 0] = t.x / 4096.0;
+      translation[object_start_trans + frame * 3 + 1] = t.y / 4096.0;
+      translation[object_start_trans + frame * 3 + 2] = t.z / 4096.0;
     }
-    object_start += 30 * 7;
+    object_start_rot += 30 * 4;
+    object_start_trans += 30 * 3;
   }
-  return rotation;
+  *rotation_out = rotation;
+  *translation_out = translation;
 }
 
 // We transform a vertex by looking up its object's transform matrix and
@@ -622,11 +626,16 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   }
 
   // Get all the animations
-  float* anim = serialize_animation(animation, object_count);
+  float* rotation_anim;
+  float* translation_anim;
+  serialize_animation(animation, object_count, &rotation_anim, &translation_anim);
 
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
-  char* animation_encoded = octet_stream_encode(anim, object_count * 30 * 7 * sizeof(float));
+  char* rotation_encoded = octet_stream_encode(rotation_anim,
+    object_count * 30 * 4 * sizeof(float));
+  char* translation_encoded = octet_stream_encode(translation_anim,
+    object_count * 30 * 3 * sizeof(float));
 
   float animation_input[30];
   for (int i = 0; i < 30; i++) {
@@ -634,7 +643,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   }
   char* animation_input_encoded = octet_stream_encode(animation_input, 30 * sizeof(float));
 
-  cgltf_buffer buffers[4] = {
+  cgltf_buffer buffers[5] = {
     {
       .name = "vertex_buffer",
       .size = 4 * 3 * total_vertices,
@@ -653,11 +662,16 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     },
     {
       .name = "animation_rotation_output",
-      .size = object_count * 30 * 7 * sizeof(float),
-      .uri = animation_encoded
+      .size = object_count * 30 * 4 * sizeof(float),
+      .uri = rotation_encoded
+    },
+    {
+      .name = "animation_translation_output",
+      .size = object_count * 30 * 3 * sizeof(float),
+      .uri = translation_encoded
     }
   };
-  cgltf_buffer_view buffer_views[4] = {
+  cgltf_buffer_view buffer_views[5] = {
     {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
@@ -684,8 +698,15 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .name = "animation_rotation_output_view",
       .buffer = &buffers[3],
       .offset = 0,
-      .size = object_count * 30 * 7 * sizeof(float),
-      .stride = 28
+      .size = object_count * 30 * 4 * sizeof(float),
+      .stride = 16
+    },
+    {
+      .name = "animation_translation_output_view",
+      .buffer = &buffers[4],
+      .offset = 0,
+      .size = object_count * 30 * 3 * sizeof(float),
+      .stride = 12
     }
   };
   cgltf_accessor accessors[4 * object_count + 1];
@@ -753,9 +774,9 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .component_type = cgltf_component_type_r_32f,
       .normalized = 0,
       .type = cgltf_type_vec4,
-      .offset = 30 * 28 * i,
+      .offset = 30 * 16 * i,
       .count = 30,
-      .stride = 28,
+      .stride = 16,
       .buffer_view = &buffer_views[3]
     };
     accessors[3 * object_count + i] = (cgltf_accessor) {
@@ -763,10 +784,10 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .component_type = cgltf_component_type_r_32f,
       .normalized = 0,
       .type = cgltf_type_vec3,
-      .offset = 30 * 28 * i + 16,
+      .offset = 30 * 12 * i,
       .count = 30,
-      .stride = 28,
-      .buffer_view = &buffer_views[3]
+      .stride = 12,
+      .buffer_view = &buffer_views[4]
     };
   }
 
@@ -912,10 +933,10 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.accessors_count = 4 * object_count + 1;
 
   data.buffer_views = buffer_views;
-  data.buffer_views_count = 4;
+  data.buffer_views_count = 5;
 
   data.buffers = buffers;
-  data.buffers_count = 4;
+  data.buffers_count = 5;
 
   data.nodes = nodes;
   data.nodes_count = object_count;
