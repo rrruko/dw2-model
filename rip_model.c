@@ -386,7 +386,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   if (trace > 0) {
     float S = sqrt(trace + 1.0) * 2;
     quaternion_t q = {
-      .w = 0.25 * S,
+      .w = -0.25 * S,
       .x = (m.x[5] - m.x[7]) / S,
       .y = (m.x[6] - m.x[2]) / S,
       .z = (m.x[1] - m.x[3]) / S
@@ -395,7 +395,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   } else if ((m.x[0] > m.x[4]) && (m.x[0] > m.x[8])) {
     float S = sqrt(1.0 + m.x[0] - m.x[4] - m.x[8]) * 2;
     quaternion_t q = {
-      .w = (m.x[5] - m.x[7]) / S,
+      .w = -(m.x[5] - m.x[7]) / S,
       .x = (m.x[3] + m.x[1]) / S,
       .y = 0.25 * S,
       .z = (m.x[7] + m.x[5]) / S
@@ -404,7 +404,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   } else if (m.x[4] > m.x[8]) {
     float S = sqrt(1.0 + m.x[4] - m.x[0] - m.x[8]) * 2;
     quaternion_t q = {
-      .w = (m.x[6] - m.x[2]) / S,
+      .w = -(m.x[6] - m.x[2]) / S,
       .x = (m.x[3] + m.x[1]) / S,
       .y = 0.25 * S,
       .z = (m.x[7] + m.x[5]) / S
@@ -413,7 +413,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   } else {
     float S = sqrt(1.0 + m.x[8] - m.x[0] - m.x[4]) * 2;
     quaternion_t q = {
-      .w = (m.x[1] - m.x[3]) / S,
+      .w = -(m.x[1] - m.x[3]) / S,
       .x = (m.x[6] + m.x[2]) / S,
       .y = (m.x[7] + m.x[5]) / S,
       .z = 0.25 * S
