@@ -964,7 +964,7 @@ int main(int argc, char** argv) {
   fprintf(stderr, "Frame table:\n");
   for (int frame = 0; frame < 30; frame++) {
     for (int object = 0; object < new_model.object_count; object++) {
-      fprintf(stderr, "%d ",
+      fprintf(stderr, "%02d ",
         animation.frame_table[frame * new_model.object_count + object]);
     }
     fprintf(stderr, "\n");
