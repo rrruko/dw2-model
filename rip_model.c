@@ -14,6 +14,7 @@ typedef struct model_s {
   uint32_t texture_sheet_offset;
   uint32_t object_count;
   uint32_t* skeleton;
+  uint32_t* node_tree;
   uint32_t* vertex_offsets;
   uint32_t* normal_offsets;
   uint32_t* face_offsets;
@@ -453,10 +454,28 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   if (items_read != new_model.object_count) {
     die("fread failure, an error occured or EOF (skeleton)");
   }
+
+  // Construct the node tree used for animation. It's just a different
+  // view of the skeleton data, where node_tree[i] is the index of object i's
+  // parent node, or -1 if object i is the root:
+  // Skeleton:   0  1  2  3  1  2  3
+  // Node tree: -1  0  1  2  0  4  5
+  new_model.node_tree = malloc(new_model.object_count * sizeof(uint32_t));
+  for (int i = 0; i < new_model.object_count; i++) {
+    new_model.node_tree[i] = -1;
+    // Seek backwards to find this object's parent, i.e. the latest node with a
+    // level that is smaller by 1
+    for (int j = i - 1; j >= 0; j--) {
+      if (new_model.skeleton[j] == new_model.skeleton[i] - 1) {
+        new_model.node_tree[i] = j;
+        break;
+      }
+    }
+  }
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, size_t object_count) {
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, uint32_t* node_tree, size_t object_count) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -587,7 +606,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .type = cgltf_primitive_type_triangles,
       .indices = &accessors[i+object_count],
       .attributes = &attributes[i],
-      .attributes_count = 1 
+      .attributes_count = 1
     };
   }
 
@@ -601,11 +620,25 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
 
   cgltf_node nodes[object_count];
   for (int i = 0; i < object_count; i++) {
+    cgltf_node* parent;
+    if (node_tree[i] >= 0) {
+      parent = &nodes[node_tree[i]];
+    } else {
+      parent = NULL;
+    }
+    cgltf_node** children = malloc(object_count * sizeof(cgltf_node*));
+    size_t children_count = 0;
+    for (int child_ix = i; child_ix < object_count; child_ix++) {
+      if (node_tree[child_ix] == i) {
+        fprintf(stderr, "child found: %d\n", child_ix);
+        children[children_count++] = &nodes[child_ix];
+      }
+    }
     nodes[i] = (cgltf_node) {
       .name = "node",
-      .parent = NULL,
-      .children = NULL,
-      .children_count = 0,
+      .parent = parent,
+      .children = children,
+      .children_count = children_count,
       .skin = NULL,
       .mesh = &meshes[i],
       .has_translation = 1
@@ -689,6 +722,11 @@ int main(int argc, char** argv) {
   fprintf(stderr, "Model skeleton:");
   for (int i = 0; i < new_model.object_count; i++) {
     fprintf(stderr, " %d", new_model.skeleton[i]);
+  }
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Model node tree:");
+  for (int i = 0; i < new_model.object_count; i++) {
+    fprintf(stderr, " %d", new_model.node_tree[i]);
   }
   fprintf(stderr, "\n");
 
@@ -800,6 +838,7 @@ int main(int argc, char** argv) {
     flat_vert_counts,
     flat_tri_table,
     flat_tri_counts,
+    new_model.node_tree,
     new_model.object_count
   );
   paletted_texture_t tex = load_texture(&new_model);
