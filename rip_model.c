@@ -117,7 +117,6 @@ char* octet_stream_encode(void* bytes, size_t size) {
   char* buf = malloc(4 * (size / 3) + strlen(header) + 1);
   strcpy(buf, header);
   char* encoded = base64_encode(bytes, size);
-  fprintf(stderr, "%s\n", encoded);
   strcat(buf, encoded);
   free(encoded);
   return buf;
@@ -274,11 +273,6 @@ polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, ui
   iso_seek_forward(model->iso, 4);
   uint32_t count;
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
-  fprintf(stderr, "Quad addresses:");
-  for (int i = 0; i < count; i++) {
-    fprintf(stderr, " %lx", model->iso->offset + i * 20);
-  }
-  fprintf(stderr, "\n");
   face_quad_t* quads = malloc(sizeof(face_quad_t) * count);
   iso_fread(model->iso, quads, sizeof(face_quad_t), count);
   *num_quads_read = count;
@@ -501,17 +495,6 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
   }
   vertex_t v_rotated = rotate(m, v);
   quaternion_t q = matrix_to_quaternion(matrix_to_fmatrix(m));
-  fprintf(stderr, "Rotating with a quaternion: %f + %fi + %fj + %fk\n",
-    q.w,
-    q.x,
-    q.y,
-    q.z);
-  /*
-  fprintf(stderr, "Matrix: %f %f %f %f %f %f %f %f %f\n",
-    m.x[0], m.x[1], m.x[2],
-    m.x[3], m.x[4], m.x[5],
-    m.x[6], m.x[7], m.x[8]);
-  */
   vertex_t v_translated = translate(translation, v_rotated);
   if (model->skeleton[object] > 0) {
     uint32_t parent = -1;
@@ -862,7 +845,6 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     size_t children_count = 0;
     for (int child_ix = i; child_ix < object_count; child_ix++) {
       if (node_tree[child_ix] == i) {
-        fprintf(stderr, "child found: %d\n", child_ix);
         children[children_count++] = &nodes[child_ix];
       }
     }
@@ -978,11 +960,20 @@ int main(int argc, char** argv) {
   uint32_t animation_sector = strtoul(argv[3], NULL, 16);
   animation = load_animation(&iso, animation_sector, new_model.object_count);
 
+  fprintf(stderr, "Frame table:\n");
+  for (int frame = 0; frame < 30; frame++) {
+    for (int object = 0; object < new_model.object_count; object++) {
+      fprintf(stderr, "%d ",
+        animation.frame_table[frame * new_model.object_count + object]);
+    }
+    fprintf(stderr, "\n");
+  }
+
   uint32_t frame = atoi(argv[4]);
 
   fprintf(stderr, "Loaded model\n");
-  fprintf(stderr, "Model texture_sheet_offset: %x\n", new_model.texture_sheet_offset);
-  fprintf(stderr, "Model object_count: %x\n", new_model.object_count);
+  fprintf(stderr, "Model texture_sheet_offset: %xh\n", new_model.texture_sheet_offset);
+  fprintf(stderr, "Model object_count: %d\n", new_model.object_count);
   fprintf(stderr, "Model skeleton:");
   for (int i = 0; i < new_model.object_count; i++) {
     fprintf(stderr, " %d", new_model.skeleton[i]);
@@ -998,7 +989,7 @@ int main(int argc, char** argv) {
   uint32_t texcoords_seen = 0;
 
   for (int i = 0; i < new_model.object_count; i++) {
-    fprintf(stderr, "offsets[%d]: (%x, %x, %x)\n",
+    fprintf(stderr, "offsets[%d]: (%xh, %xh, %xh)\n",
       i,
       new_model.vertex_offsets[i],
       new_model.normal_offsets[i],
