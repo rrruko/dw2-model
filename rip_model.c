@@ -231,7 +231,7 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
 
 char* googa = "googa.png";
 
-void save_png_texture_with_palette(paletted_texture_t* tex, char* filename, uint8_t column, uint8_t row) {
+void save_png_texture_with_palette(paletted_texture_t* tex, char* dontcare, uint8_t column, uint8_t row) {
   png_image png;
   memset(&png, 0, sizeof(png_image));
   png.version = PNG_IMAGE_VERSION;
@@ -241,9 +241,19 @@ void save_png_texture_with_palette(paletted_texture_t* tex, char* filename, uint
   png.format = PNG_FORMAT_RGB;
   png.flags = 0;
   uint8_t* texture_expanded = expand_texture_paletted(tex, column, row);
+  char itoa_buf[30];
+  char filename[30];
+  memset(filename, 0, 30);
+  strcat(filename, "googa");
+  sprintf(itoa_buf, "%d", column);
+  strcat(filename, itoa_buf);
+  strcat(filename, "-");
+  sprintf(itoa_buf, "%d", row);
+  strcat(filename, itoa_buf);
+  strcat(filename, ".png");
   png_image_write_to_file(
     &png,
-    googa,
+    filename,
     0,
     texture_expanded,
     0,
@@ -1100,5 +1110,14 @@ int main(int argc, char** argv) {
   );
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
+  save_png_texture_with_palette(&tex, argv[5], 0, 0xf6);
+  save_png_texture_with_palette(&tex, argv[5], 0, 0xf8);
+  save_png_texture_with_palette(&tex, argv[5], 0, 0xfa);
+  save_png_texture_with_palette(&tex, argv[5], 0, 0xfc);
+  save_png_texture_with_palette(&tex, argv[5], 0, 0xfe);
+  save_png_texture_with_palette(&tex, argv[5], 1, 0xf6);
+  save_png_texture_with_palette(&tex, argv[5], 1, 0xf8);
+  save_png_texture_with_palette(&tex, argv[5], 1, 0xfa);
+  save_png_texture_with_palette(&tex, argv[5], 1, 0xfc);
   save_png_texture_with_palette(&tex, argv[5], 1, 0xfe);
 }
