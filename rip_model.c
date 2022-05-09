@@ -15,7 +15,7 @@ typedef struct model_s {
   uint32_t texture_sheet_offset;
   uint32_t object_count;
   uint32_t* skeleton;
-  uint32_t* node_tree;
+  int32_t* node_tree;
   uint32_t* vertex_offsets;
   uint32_t* normal_offsets;
   uint32_t* face_offsets;
@@ -423,7 +423,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
 }
 
 float* serialize_animation(animation_t* animation, uint32_t object_count) {
-  float* rotation = malloc(30 * 16 * object_count); // 30 quaternions, each quaternion is 4 floats, times object_count
+  float* rotation = malloc(30 * 28 * object_count); // 30 quaternions, each quaternion is 4 floats, plus 30 translation vectors of 3 floats each, times object_count
   uint32_t object_start = 0;
   for (int object = 0; object < object_count; object++) {
     uint32_t offset = animation->offsets[object];
@@ -453,12 +453,15 @@ float* serialize_animation(animation_t* animation, uint32_t object_count) {
         die("fread failure, an error occured or EOF (translation)");
       }
       // Spec says component order is XYZW
-      rotation[object_start + frame * 4 + 0] = q.x;
-      rotation[object_start + frame * 4 + 1] = q.y;
-      rotation[object_start + frame * 4 + 2] = q.z;
-      rotation[object_start + frame * 4 + 3] = q.w;
+      rotation[object_start + frame * 7 + 0] = q.x;
+      rotation[object_start + frame * 7 + 1] = q.y;
+      rotation[object_start + frame * 7 + 2] = q.z;
+      rotation[object_start + frame * 7 + 3] = q.w;
+      rotation[object_start + frame * 7 + 4] = translation.x / 4096.0;
+      rotation[object_start + frame * 7 + 5] = translation.y / 4096.0;
+      rotation[object_start + frame * 7 + 6] = translation.z / 4096.0;
     }
-    object_start += 30 * 4;
+    object_start += 30 * 7;
   }
   return rotation;
 }
@@ -595,7 +598,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, animation_t* animation, uint32_t* node_tree, size_t object_count) {
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, animation_t* animation, int32_t* node_tree, size_t object_count) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -623,7 +626,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
 
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
-  char* animation_encoded = octet_stream_encode(anim, object_count * 30 * 4 * sizeof(float));
+  char* animation_encoded = octet_stream_encode(anim, object_count * 30 * 7 * sizeof(float));
 
   float animation_input[30];
   for (int i = 0; i < 30; i++) {
@@ -650,7 +653,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     },
     {
       .name = "animation_rotation_output",
-      .size = object_count * 30 * 4 * sizeof(float),
+      .size = object_count * 30 * 7 * sizeof(float),
       .uri = animation_encoded
     }
   };
@@ -681,10 +684,11 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .name = "animation_rotation_output_view",
       .buffer = &buffers[3],
       .offset = 0,
-      .size = object_count * 30 * 4 * sizeof(float)
+      .size = object_count * 30 * 7 * sizeof(float),
+      .stride = 28
     }
   };
-  cgltf_accessor accessors[3 * object_count + 1];
+  cgltf_accessor accessors[4 * object_count + 1];
   size_t object_vertex_offset = 0;
   for (int i = 0; i < object_count; i++) {
     accessors[i] = (cgltf_accessor) {
@@ -749,14 +753,24 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .component_type = cgltf_component_type_r_32f,
       .normalized = 0,
       .type = cgltf_type_vec4,
-      .offset = 30 * 16 * i,
+      .offset = 30 * 28 * i,
       .count = 30,
-      .stride = 16,
+      .stride = 28,
+      .buffer_view = &buffer_views[3]
+    };
+    accessors[3 * object_count + i] = (cgltf_accessor) {
+      .name = "animation_translation_output",
+      .component_type = cgltf_component_type_r_32f,
+      .normalized = 0,
+      .type = cgltf_type_vec3,
+      .offset = 30 * 28 * i + 16,
+      .count = 30,
+      .stride = 28,
       .buffer_view = &buffer_views[3]
     };
   }
 
-  accessors[3 * object_count] = (cgltf_accessor) {
+  accessors[4 * object_count] = (cgltf_accessor) {
     .name = "animation_rotation_input",
     .component_type = cgltf_component_type_r_32f,
     .normalized = 0,
@@ -768,8 +782,8 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     .has_min = 1,
     .has_max = 1
   };
-  accessors[3 * object_count].min[0] = 0;
-  accessors[3 * object_count].max[0] = 29 * 0.0333333;
+  accessors[4 * object_count].min[0] = 0;
+  accessors[4 * object_count].max[0] = 29 * 0.0333333;
 
   cgltf_attribute attributes[object_count];
   for (int i = 0; i < object_count; i++) {
@@ -799,13 +813,20 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     };
   }
 
-  cgltf_animation_sampler samplers[object_count];
+  cgltf_animation_sampler samplers[2 * object_count];
   for (int i = 0; i < object_count; i++) {
     samplers[i] = (cgltf_animation_sampler) {
-      .input = &accessors[3 * object_count],
+      .input = &accessors[4 * object_count],
       .output = &accessors[2 * object_count + i],
       .interpolation = cgltf_interpolation_type_step
     };
+
+    samplers[object_count + i] = (cgltf_animation_sampler) {
+      .input = &accessors[4 * object_count],
+      .output = &accessors[3 * object_count + i],
+      .interpolation = cgltf_interpolation_type_step
+    };
+
   }
 
   cgltf_node nodes[object_count];
@@ -824,6 +845,9 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
         children[children_count++] = &nodes[child_ix];
       }
     }
+    if (children_count == 0) {
+      children = NULL;
+    }
     nodes[i] = (cgltf_node) {
       .name = "node",
       .parent = parent,
@@ -838,35 +862,42 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
     nodes[i].translation[2] = 0.0;
   }
 
-  cgltf_node* node_pointers[object_count];
+  cgltf_node* root_nodes[object_count];
+  int root_node_count = 0;
   for (int i = 0; i < object_count; i++) {
-    node_pointers[i] = &nodes[i];
+    if (node_tree[i] < 0) {
+      root_nodes[root_node_count++] = &nodes[i];
+    }
   }
 
-  cgltf_animation_channel channels[object_count];
+  cgltf_animation_channel channels[2 * object_count];
   for (int i = 0; i < object_count; i++) {
     channels[i] = (cgltf_animation_channel) {
       .sampler = &samplers[i],
       .target_node = &nodes[i],
       .target_path = cgltf_animation_path_type_rotation
     };
+    channels[object_count + i] = (cgltf_animation_channel) {
+      .sampler = &samplers[object_count + i],
+      .target_node = &nodes[i],
+      .target_path = cgltf_animation_path_type_translation
+    };
   }
 
   cgltf_animation animations[object_count];
   animations[0] = (cgltf_animation) {
-    .name = "animation_rotation_0",
+    .name = "animation",
     .samplers = samplers,
-    .samplers_count = object_count,
+    .samplers_count = 2 * object_count,
     .channels = channels,
-    .channels_count = object_count
+    .channels_count = 2 * object_count
   };
 
-  // TODO: Scene should only contain root nodes
   cgltf_scene scenes[1] = {
     {
       .name = "scene",
-      .nodes = node_pointers,
-      .nodes_count = object_count
+      .nodes = root_nodes,
+      .nodes_count = root_node_count
     }
   };
 
@@ -878,7 +909,7 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.animations_count = 1;
 
   data.accessors = accessors;
-  data.accessors_count = 3 * object_count + 1;
+  data.accessors_count = 4 * object_count + 1;
 
   data.buffer_views = buffer_views;
   data.buffer_views_count = 4;
@@ -975,9 +1006,9 @@ int main(int argc, char** argv) {
         v.x / 4096.0,
         v.y / 4096.0,
         v.z / 4096.0);
-      flat_verts[3 * i + 0] = v.x / 4096.0;
-      flat_verts[3 * i + 1] = v.y / 4096.0;
-      flat_verts[3 * i + 2] = v.z / 4096.0;
+      flat_verts[3 * i + 0] = verts[i].x / 4096.0;
+      flat_verts[3 * i + 1] = verts[i].y / 4096.0;
+      flat_verts[3 * i + 2] = verts[i].z / 4096.0;
     }
     uint32_t num_quads_read;
     uint32_t num_tris_read;
