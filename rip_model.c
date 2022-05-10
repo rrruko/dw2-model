@@ -1091,23 +1091,9 @@ int main(int argc, char** argv) {
   size_t texcoord_counts[new_model.object_count];
   memset(texcoord_counts, 0, new_model.object_count * sizeof(size_t));
   for (int j = 0; j < new_model.object_count; j++) {
-    printf("o %d\n", j);
     uint32_t num_read;
     vertex_t* verts;
     verts = load_vertices(&new_model, j, &num_read);
-    float* flat_verts = calloc(num_read, 3 * sizeof(float));
-    flat_vert_table[j] = flat_verts;
-    flat_vert_counts[j] = num_read;
-    for (int i = 0; i < num_read; i++) {
-      vertex_t v = transform_vertex(verts[i], &new_model, &animation, j, frame);
-      printf("v %f %f %f\n",
-        v.x / 4096.0,
-        v.y / 4096.0,
-        v.z / 4096.0);
-      flat_verts[3 * i + 0] = verts[i].x / 4096.0;
-      flat_verts[3 * i + 1] = verts[i].y / 4096.0;
-      flat_verts[3 * i + 2] = verts[i].z / 4096.0;
-    }
     uint32_t num_quads_read;
     uint32_t num_tris_read;
     polys_t polys;
@@ -1120,17 +1106,14 @@ int main(int argc, char** argv) {
       6 * (num_quads_read * 2 + num_tris_read),
       sizeof(float)
     );
+    float* flat_verts = calloc(
+      6 * num_quads_read + 3 * num_tris_read,
+      3 * sizeof(float));
+    flat_vert_table[j] = flat_verts;
+    flat_vert_counts[j] = 6 * num_quads_read + 3 * num_tris_read;
+
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
-      printf("vt %f %f\nvt %f %f\nvt %f %f\nvt %f %f\n",
-        quads[i].tex_c_x / 128.0,
-        quads[i].tex_c_y / 256.0,
-        quads[i].tex_a_x / 128.0,
-        quads[i].tex_a_y / 256.0,
-        quads[i].tex_b_x / 128.0,
-        quads[i].tex_b_y / 256.0,
-        quads[i].tex_d_x / 128.0,
-        quads[i].tex_d_y / 256.0);
       texcoords[12 * i +  0] = quads[i].tex_c_x / 128.0;
       texcoords[12 * i +  1] = quads[i].tex_c_y / 256.0;
       texcoords[12 * i +  2] = quads[i].tex_b_x / 128.0;
@@ -1143,56 +1126,55 @@ int main(int argc, char** argv) {
       texcoords[12 * i +  9] = quads[i].tex_c_y / 256.0;
       texcoords[12 * i + 10] = quads[i].tex_d_x / 128.0;
       texcoords[12 * i + 11] = quads[i].tex_d_y / 256.0;
+      flat_verts[18 * i +  0] = verts[quads[i].vertex_c].x / 4096.0;
+      flat_verts[18 * i +  1] = verts[quads[i].vertex_c].y / 4096.0;
+      flat_verts[18 * i +  2] = verts[quads[i].vertex_c].z / 4096.0;
+      flat_verts[18 * i +  3] = verts[quads[i].vertex_b].x / 4096.0;
+      flat_verts[18 * i +  4] = verts[quads[i].vertex_b].y / 4096.0;
+      flat_verts[18 * i +  5] = verts[quads[i].vertex_b].z / 4096.0;
+      flat_verts[18 * i +  6] = verts[quads[i].vertex_a].x / 4096.0;
+      flat_verts[18 * i +  7] = verts[quads[i].vertex_a].y / 4096.0;
+      flat_verts[18 * i +  8] = verts[quads[i].vertex_a].z / 4096.0;
+      flat_verts[18 * i +  9] = verts[quads[i].vertex_b].x / 4096.0;
+      flat_verts[18 * i + 10] = verts[quads[i].vertex_b].y / 4096.0;
+      flat_verts[18 * i + 11] = verts[quads[i].vertex_b].z / 4096.0;
+      flat_verts[18 * i + 12] = verts[quads[i].vertex_c].x / 4096.0;
+      flat_verts[18 * i + 13] = verts[quads[i].vertex_c].y / 4096.0;
+      flat_verts[18 * i + 14] = verts[quads[i].vertex_c].z / 4096.0;
+      flat_verts[18 * i + 15] = verts[quads[i].vertex_d].x / 4096.0;
+      flat_verts[18 * i + 16] = verts[quads[i].vertex_d].y / 4096.0;
+      flat_verts[18 * i + 17] = verts[quads[i].vertex_d].z / 4096.0;
+      flat_tris[6 * i + 0] = 6 * i + 0;
+      flat_tris[6 * i + 1] = 6 * i + 1;
+      flat_tris[6 * i + 2] = 6 * i + 2;
+      flat_tris[6 * i + 3] = 6 * i + 3;
+      flat_tris[6 * i + 4] = 6 * i + 4;
+      flat_tris[6 * i + 5] = 6 * i + 5;
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
-      printf("vt %f %f\nvt %f %f\nvt %f %f\n",
-        tris[i].tex_a_x / 128.0,
-        tris[i].tex_a_y / 256.0,
-        tris[i].tex_b_x / 128.0,
-        tris[i].tex_b_y / 256.0,
-        tris[i].tex_c_x / 128.0,
-        tris[i].tex_c_y / 256.0);
       texcoords[6 * i + 0 + (12 * num_quads_read)] = tris[i].tex_a_x / 128.0;
       texcoords[6 * i + 1 + (12 * num_quads_read)] = tris[i].tex_a_y / 256.0;
       texcoords[6 * i + 2 + (12 * num_quads_read)] = tris[i].tex_c_x / 128.0;
       texcoords[6 * i + 3 + (12 * num_quads_read)] = tris[i].tex_c_y / 256.0;
       texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 128.0;
       texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 256.0;
-    }
-    for (int i = 0; i < num_quads_read; i++) {
-      face_quad_t* quads = polys.quads;
-      printf("f %d/%d %d/%d %d/%d %d/%d\n",
-        quads[i].vertex_c + 1 + verts_seen,
-        texcoords_seen + 4 * i + 1,
-        quads[i].vertex_a + 1 + verts_seen,
-        texcoords_seen + 4 * i + 2,
-        quads[i].vertex_b + 1 + verts_seen,
-        texcoords_seen + 4 * i + 3,
-        quads[i].vertex_d + 1 + verts_seen,
-        texcoords_seen + 4 * i + 4);
-      flat_tris[6 * i + 0] = quads[i].vertex_c;
-      flat_tris[6 * i + 1] = quads[i].vertex_b;
-      flat_tris[6 * i + 2] = quads[i].vertex_a;
-      flat_tris[6 * i + 3] = quads[i].vertex_b;
-      flat_tris[6 * i + 4] = quads[i].vertex_c;
-      flat_tris[6 * i + 5] = quads[i].vertex_d;
+      size_t this_tri_offset = 18 * num_quads_read + 9 * i;
+      flat_verts[this_tri_offset + 0] = verts[tris[i].vertex_a].x / 4096.0;
+      flat_verts[this_tri_offset + 1] = verts[tris[i].vertex_a].y / 4096.0;
+      flat_verts[this_tri_offset + 2] = verts[tris[i].vertex_a].z / 4096.0;
+      flat_verts[this_tri_offset + 3] = verts[tris[i].vertex_c].x / 4096.0;
+      flat_verts[this_tri_offset + 4] = verts[tris[i].vertex_c].y / 4096.0;
+      flat_verts[this_tri_offset + 5] = verts[tris[i].vertex_c].z / 4096.0;
+      flat_verts[this_tri_offset + 6] = verts[tris[i].vertex_b].x / 4096.0;
+      flat_verts[this_tri_offset + 7] = verts[tris[i].vertex_b].y / 4096.0;
+      flat_verts[this_tri_offset + 8] = verts[tris[i].vertex_b].z / 4096.0;
+      flat_tris[3 * i + 0 + (6 * num_quads_read)] = 3 * i + 0 + (6 * num_quads_read);
+      flat_tris[3 * i + 1 + (6 * num_quads_read)] = 3 * i + 1 + (6 * num_quads_read);
+      flat_tris[3 * i + 2 + (6 * num_quads_read)] = 3 * i + 2 + (6 * num_quads_read);
     }
     flat_tri_table[j] = flat_tris;
     flat_tri_counts[j] = 2 * num_quads_read + num_tris_read;
-    for (int i = 0; i < num_tris_read; i++) {
-      face_tri_t* tris = polys.tris;
-      printf("f %d/%d %d/%d %d/%d\n",
-        tris[i].vertex_a + 1 + verts_seen,
-        texcoords_seen + 4 * num_quads_read + 3 * i + 1,
-        tris[i].vertex_b + 1 + verts_seen,
-        texcoords_seen + 4 * num_quads_read + 3 * i + 2,
-        tris[i].vertex_c + 1 + verts_seen,
-        texcoords_seen + 4 * num_quads_read + 3 * i + 3);
-      flat_tris[3 * i + 0 + (6 * num_quads_read)] = tris[i].vertex_a;
-      flat_tris[3 * i + 1 + (6 * num_quads_read)] = tris[i].vertex_c;
-      flat_tris[3 * i + 2 + (6 * num_quads_read)] = tris[i].vertex_b;
-    }
     texcoord_table[j] = texcoords;
     texcoord_counts[j] = num_quads_read * 6 + num_tris_read * 3;
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
