@@ -430,7 +430,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   if (trace > 0) {
     float S = sqrt(trace + 1.0) * 2;
     quaternion_t q = {
-      .w = -0.25 * S,
+      .w = 0.25 * S,
       .x = (m.x[5] - m.x[7]) / S,
       .y = (m.x[6] - m.x[2]) / S,
       .z = (m.x[1] - m.x[3]) / S
@@ -439,7 +439,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   } else if ((m.x[0] > m.x[4]) && (m.x[0] > m.x[8])) {
     float S = sqrt(1.0 + m.x[0] - m.x[4] - m.x[8]) * 2;
     quaternion_t q = {
-      .w = -(m.x[5] - m.x[7]) / S,
+      .w = (m.x[5] - m.x[7]) / S,
       .x = (m.x[3] + m.x[1]) / S,
       .y = 0.25 * S,
       .z = (m.x[7] + m.x[5]) / S
@@ -448,7 +448,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   } else if (m.x[4] > m.x[8]) {
     float S = sqrt(1.0 + m.x[4] - m.x[0] - m.x[8]) * 2;
     quaternion_t q = {
-      .w = -(m.x[6] - m.x[2]) / S,
+      .w = (m.x[6] - m.x[2]) / S,
       .x = (m.x[3] + m.x[1]) / S,
       .y = 0.25 * S,
       .z = (m.x[7] + m.x[5]) / S
@@ -457,7 +457,7 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   } else {
     float S = sqrt(1.0 + m.x[8] - m.x[0] - m.x[4]) * 2;
     quaternion_t q = {
-      .w = -(m.x[1] - m.x[3]) / S,
+      .w = (m.x[1] - m.x[3]) / S,
       .x = (m.x[6] + m.x[2]) / S,
       .y = (m.x[7] + m.x[5]) / S,
       .z = 0.25 * S
@@ -504,7 +504,7 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
       rotation[object_start_rot + frame * 4 + 2] = q.z;
       rotation[object_start_rot + frame * 4 + 3] = q.w;
       translation[object_start_trans + frame * 3 + 0] = t.x / 4096.0;
-      translation[object_start_trans + frame * 3 + 1] = t.y / 4096.0;
+      translation[object_start_trans + frame * 3 + 1] = -t.y / 4096.0;
       translation[object_start_trans + frame * 3 + 2] = t.z / 4096.0;
     }
     object_start_rot += 30 * 4;
@@ -934,7 +934,8 @@ png_alloc) {
   materials[0] = (cgltf_material) {
     .name = "material",
     .has_pbr_metallic_roughness = 1,
-    .pbr_metallic_roughness = metallic_roughness
+    .pbr_metallic_roughness = metallic_roughness,
+    .double_sided = 1
   };
 
   cgltf_attribute attributes[2 * object_count];
@@ -1243,22 +1244,22 @@ int main(int argc, char** argv) {
       texcoords[12 * i + 10] = quads[i].tex_d_x / 1024.0 + tex_offs_x;
       texcoords[12 * i + 11] = quads[i].tex_d_y / 1024.0 + tex_offs_y;
       flat_verts[18 * i +  0] = verts[quads[i].vertex_c].x / 4096.0;
-      flat_verts[18 * i +  1] = verts[quads[i].vertex_c].y / 4096.0;
+      flat_verts[18 * i +  1] = -verts[quads[i].vertex_c].y / 4096.0;
       flat_verts[18 * i +  2] = verts[quads[i].vertex_c].z / 4096.0;
       flat_verts[18 * i +  3] = verts[quads[i].vertex_b].x / 4096.0;
-      flat_verts[18 * i +  4] = verts[quads[i].vertex_b].y / 4096.0;
+      flat_verts[18 * i +  4] = -verts[quads[i].vertex_b].y / 4096.0;
       flat_verts[18 * i +  5] = verts[quads[i].vertex_b].z / 4096.0;
       flat_verts[18 * i +  6] = verts[quads[i].vertex_a].x / 4096.0;
-      flat_verts[18 * i +  7] = verts[quads[i].vertex_a].y / 4096.0;
+      flat_verts[18 * i +  7] = -verts[quads[i].vertex_a].y / 4096.0;
       flat_verts[18 * i +  8] = verts[quads[i].vertex_a].z / 4096.0;
       flat_verts[18 * i +  9] = verts[quads[i].vertex_b].x / 4096.0;
-      flat_verts[18 * i + 10] = verts[quads[i].vertex_b].y / 4096.0;
+      flat_verts[18 * i + 10] = -verts[quads[i].vertex_b].y / 4096.0;
       flat_verts[18 * i + 11] = verts[quads[i].vertex_b].z / 4096.0;
       flat_verts[18 * i + 12] = verts[quads[i].vertex_c].x / 4096.0;
-      flat_verts[18 * i + 13] = verts[quads[i].vertex_c].y / 4096.0;
+      flat_verts[18 * i + 13] = -verts[quads[i].vertex_c].y / 4096.0;
       flat_verts[18 * i + 14] = verts[quads[i].vertex_c].z / 4096.0;
       flat_verts[18 * i + 15] = verts[quads[i].vertex_d].x / 4096.0;
-      flat_verts[18 * i + 16] = verts[quads[i].vertex_d].y / 4096.0;
+      flat_verts[18 * i + 16] = -verts[quads[i].vertex_d].y / 4096.0;
       flat_verts[18 * i + 17] = verts[quads[i].vertex_d].z / 4096.0;
       flat_tris[6 * i + 0] = 6 * i + 0;
       flat_tris[6 * i + 1] = 6 * i + 1;
@@ -1305,13 +1306,13 @@ int main(int argc, char** argv) {
       texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 1024.0 + tex_offs_y;
       size_t this_tri_offset = 18 * num_quads_read + 9 * i;
       flat_verts[this_tri_offset + 0] = verts[tris[i].vertex_a].x / 4096.0;
-      flat_verts[this_tri_offset + 1] = verts[tris[i].vertex_a].y / 4096.0;
+      flat_verts[this_tri_offset + 1] = -verts[tris[i].vertex_a].y / 4096.0;
       flat_verts[this_tri_offset + 2] = verts[tris[i].vertex_a].z / 4096.0;
       flat_verts[this_tri_offset + 3] = verts[tris[i].vertex_c].x / 4096.0;
-      flat_verts[this_tri_offset + 4] = verts[tris[i].vertex_c].y / 4096.0;
+      flat_verts[this_tri_offset + 4] = -verts[tris[i].vertex_c].y / 4096.0;
       flat_verts[this_tri_offset + 5] = verts[tris[i].vertex_c].z / 4096.0;
       flat_verts[this_tri_offset + 6] = verts[tris[i].vertex_b].x / 4096.0;
-      flat_verts[this_tri_offset + 7] = verts[tris[i].vertex_b].y / 4096.0;
+      flat_verts[this_tri_offset + 7] = -verts[tris[i].vertex_b].y / 4096.0;
       flat_verts[this_tri_offset + 8] = verts[tris[i].vertex_b].z / 4096.0;
       flat_tris[3 * i + 0 + (6 * num_quads_read)] = 3 * i + 0 + (6 * num_quads_read);
       flat_tris[3 * i + 1 + (6 * num_quads_read)] = 3 * i + 1 + (6 * num_quads_read);
