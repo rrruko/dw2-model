@@ -508,9 +508,9 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
       // Spec says component order is XYZW
       rotation[object_start_rot + frame * 4 + 0] = q.x;
       rotation[object_start_rot + frame * 4 + 1] = q.y;
-      rotation[object_start_rot + frame * 4 + 2] = q.z;
+      rotation[object_start_rot + frame * 4 + 2] = -q.z;
       rotation[object_start_rot + frame * 4 + 3] = q.w;
-      translation[object_start_trans + frame * 3 + 0] = t.x / 4096.0;
+      translation[object_start_trans + frame * 3 + 0] = -t.x / 4096.0;
       translation[object_start_trans + frame * 3 + 1] = -t.y / 4096.0;
       translation[object_start_trans + frame * 3 + 2] = t.z / 4096.0;
     }
@@ -1252,22 +1252,22 @@ int main(int argc, char** argv) {
       texcoords[12 * i +  9] = quads[i].tex_c_y / 1024.0 + tex_offs_y;
       texcoords[12 * i + 10] = quads[i].tex_d_x / 1024.0 + tex_offs_x;
       texcoords[12 * i + 11] = quads[i].tex_d_y / 1024.0 + tex_offs_y;
-      flat_verts[18 * i +  0] = verts[quads[i].vertex_c].x / 4096.0;
+      flat_verts[18 * i +  0] = -verts[quads[i].vertex_c].x / 4096.0;
       flat_verts[18 * i +  1] = -verts[quads[i].vertex_c].y / 4096.0;
       flat_verts[18 * i +  2] = verts[quads[i].vertex_c].z / 4096.0;
-      flat_verts[18 * i +  3] = verts[quads[i].vertex_b].x / 4096.0;
+      flat_verts[18 * i +  3] = -verts[quads[i].vertex_b].x / 4096.0;
       flat_verts[18 * i +  4] = -verts[quads[i].vertex_b].y / 4096.0;
       flat_verts[18 * i +  5] = verts[quads[i].vertex_b].z / 4096.0;
-      flat_verts[18 * i +  6] = verts[quads[i].vertex_a].x / 4096.0;
+      flat_verts[18 * i +  6] = -verts[quads[i].vertex_a].x / 4096.0;
       flat_verts[18 * i +  7] = -verts[quads[i].vertex_a].y / 4096.0;
       flat_verts[18 * i +  8] = verts[quads[i].vertex_a].z / 4096.0;
-      flat_verts[18 * i +  9] = verts[quads[i].vertex_b].x / 4096.0;
+      flat_verts[18 * i +  9] = -verts[quads[i].vertex_b].x / 4096.0;
       flat_verts[18 * i + 10] = -verts[quads[i].vertex_b].y / 4096.0;
       flat_verts[18 * i + 11] = verts[quads[i].vertex_b].z / 4096.0;
-      flat_verts[18 * i + 12] = verts[quads[i].vertex_c].x / 4096.0;
+      flat_verts[18 * i + 12] = -verts[quads[i].vertex_c].x / 4096.0;
       flat_verts[18 * i + 13] = -verts[quads[i].vertex_c].y / 4096.0;
       flat_verts[18 * i + 14] = verts[quads[i].vertex_c].z / 4096.0;
-      flat_verts[18 * i + 15] = verts[quads[i].vertex_d].x / 4096.0;
+      flat_verts[18 * i + 15] = -verts[quads[i].vertex_d].x / 4096.0;
       flat_verts[18 * i + 16] = -verts[quads[i].vertex_d].y / 4096.0;
       flat_verts[18 * i + 17] = verts[quads[i].vertex_d].z / 4096.0;
       flat_tris[6 * i + 0] = 6 * i + 0;
@@ -1314,13 +1314,13 @@ int main(int argc, char** argv) {
       texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 1024.0 + tex_offs_x;
       texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 1024.0 + tex_offs_y;
       size_t this_tri_offset = 18 * num_quads_read + 9 * i;
-      flat_verts[this_tri_offset + 0] = verts[tris[i].vertex_a].x / 4096.0;
+      flat_verts[this_tri_offset + 0] = -verts[tris[i].vertex_a].x / 4096.0;
       flat_verts[this_tri_offset + 1] = -verts[tris[i].vertex_a].y / 4096.0;
       flat_verts[this_tri_offset + 2] = verts[tris[i].vertex_a].z / 4096.0;
-      flat_verts[this_tri_offset + 3] = verts[tris[i].vertex_c].x / 4096.0;
+      flat_verts[this_tri_offset + 3] = -verts[tris[i].vertex_c].x / 4096.0;
       flat_verts[this_tri_offset + 4] = -verts[tris[i].vertex_c].y / 4096.0;
       flat_verts[this_tri_offset + 5] = verts[tris[i].vertex_c].z / 4096.0;
-      flat_verts[this_tri_offset + 6] = verts[tris[i].vertex_b].x / 4096.0;
+      flat_verts[this_tri_offset + 6] = -verts[tris[i].vertex_b].x / 4096.0;
       flat_verts[this_tri_offset + 7] = -verts[tris[i].vertex_b].y / 4096.0;
       flat_verts[this_tri_offset + 8] = verts[tris[i].vertex_b].z / 4096.0;
       flat_tris[3 * i + 0 + (6 * num_quads_read)] = 3 * i + 0 + (6 * num_quads_read);
