@@ -91,7 +91,7 @@ uint8_t base64_table[64] = {
 };
 
 char* base64_encode(unsigned char* bytes, size_t size) {
-  char* buf = malloc(4 * (size / 3) + 1);
+  char* buf = malloc(4 * (size / 3) + 5);
   buf[4 * (size / 3)] = '\0';
   for (int i = 0; i < size / 3; i++) {
     buf[4 * i + 0] = base64_table[
@@ -109,12 +109,37 @@ char* base64_encode(unsigned char* bytes, size_t size) {
       bytes[3 * i + 2] & 0x3f
     ];
   }
+  if (size % 3 == 1) {
+    buf[4 * (size / 3)] = base64_table[
+      bytes[3 * (size / 3)] >> 2
+    ];
+    buf[4 * (size / 3) + 1] = base64_table[
+      (bytes[3 * (size / 3)] & 0x03) << 4
+    ];
+    buf[4 * (size / 3) + 2] = '=';
+    buf[4 * (size / 3) + 3] = '=';
+    buf[4 * (size / 3) + 4] = '\0';
+  }
+  if (size % 3 == 2) {
+    buf[4 * (size / 3)] = base64_table[
+      bytes[3 * (size / 3)] >> 2
+    ];
+    buf[4 * (size / 3) + 1] = base64_table[
+      ((bytes[3 * (size / 3)] & 0x03) << 4) |
+      (bytes[3 * (size / 3) + 1] >> 4)
+    ];
+    buf[4 * (size / 3) + 2] = base64_table[
+      (bytes[3 * (size / 3) + 1] & 0x0f) << 2
+    ];
+    buf[4 * (size / 3) + 3] = '=';
+    buf[4 * (size / 3) + 4] = '\0';
+  }
   return buf;
 }
 
 char* octet_stream_encode(void* bytes, size_t size) {
   static char* header = "data:application/octet-stream;base64,";
-  char* buf = malloc(4 * (size / 3) + strlen(header) + 1);
+  char* buf = malloc(4 * (size / 3) + strlen(header) + 5);
   strcpy(buf, header);
   char* encoded = base64_encode(bytes, size);
   strcat(buf, encoded);
@@ -701,7 +726,7 @@ png_alloc) {
       .uri = texcoord_encoded
     },
     {
-      .name = "texture",
+      .name = "texture_buffer",
       .size = png_alloc,
       .uri = png_encoded
     }
@@ -870,14 +895,14 @@ png_alloc) {
 
   cgltf_image images[1];
   images[0] = (cgltf_image) {
-    .name = "texture",
+    .name = "texture_image",
     .buffer_view = &buffer_views[6],
     .mime_type = "image/png"
   };
 
   cgltf_sampler texture_samplers[1];
   texture_samplers[0] = (cgltf_sampler) {
-    .name = "texture",
+    .name = "texture_sampler",
     .mag_filter = 9728, // NEAREST
     .min_filter = 9728, // NEAREST
     .wrap_s = 33071, // CLAMP_TO_EDGE
@@ -1332,6 +1357,6 @@ int main(int argc, char** argv) {
     &animation,
     new_model.node_tree,
     new_model.object_count,
-    png_alloc - 2 // ???
+    png_alloc
   );
 }
