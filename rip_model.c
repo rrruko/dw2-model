@@ -246,6 +246,45 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
 
 char* googa = "googa.png";
 
+// This is the buffer where raw pixels will be blitted to, used to generate the
+// png. 1024x1024 pixels RGB
+uint8_t png_write_buffer[3*1024*1024];
+
+void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t row, size_t offset_x, size_t offset_y) {
+  uint8_t* texture_expanded = expand_texture_paletted(tex, column, row);
+  for (int j = 0; j < 256; j++) {
+    for (int i = 0; i < 128; i++) {
+      size_t to_x = 3 * (offset_x + i);
+      size_t to_y = offset_y + j;
+      png_write_buffer[3 * 1024 * to_y + to_x + 0] = texture_expanded[3 * (128 *
+      j + i) + 0];
+      png_write_buffer[3 * 1024 * to_y + to_x + 1] = texture_expanded[3 * (128 *
+      j + i) + 1];
+      png_write_buffer[3 * 1024 * to_y + to_x + 2] = texture_expanded[3 * (128 *
+      j + i) + 2];
+    }
+  }
+}
+
+void save_png_write_buffer() {
+  png_image png;
+  memset(&png, 0, sizeof(png_image));
+  png.version = PNG_IMAGE_VERSION;
+  png.width = 1024;
+  png.height = 1024;
+  png.colormap_entries = 0;
+  png.format = PNG_FORMAT_RGB;
+  png.flags = 0;
+  char* filename = "mega-texture.png";
+  png_image_write_to_file(
+    &png,
+    filename,
+    0,
+    png_write_buffer,
+    0,
+    NULL);
+}
+
 png_alloc_size_t save_png_texture_with_palette(paletted_texture_t* tex, char* dontcare, uint8_t column, uint8_t row) {
   png_image png;
   memset(&png, 0, sizeof(png_image));
@@ -1221,6 +1260,11 @@ int main(int argc, char** argv) {
   for (int pal = 0; pal < exported_palettes_count; pal++) {
     uint16_t clut = exported_palettes[pal];
     fprintf(stderr, "Loading the texture with %02x,%02x\n", clut & 0x3f, clut >> 6);
+    size_t offset_x = 128 * (pal % 8);
+    size_t offset_y = 256 * (pal / 8);
+    blit_to_png_write_buffer(&tex, clut & 0x3f, clut >> 6, offset_x, offset_y);
+
+    /*
     size_t ex = save_png_texture_with_palette(&tex, argv[5], clut & 0x3f, clut >> 6);
     fprintf(stderr, "Wrote a png with size %lu\nFirst coupla bytes:\n", ex);
     for (size_t j = 0; j < 0x4; j++) {
@@ -1231,5 +1275,7 @@ int main(int argc, char** argv) {
       }
       fprintf(stderr, "\n");
     }
+    */
   }
+  save_png_write_buffer();
 }
