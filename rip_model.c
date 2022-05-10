@@ -168,36 +168,13 @@ uint8_t* expand_texture_rgb(paletted_texture_t* tex) {
   return expanded;
 }
 
-#define PNG_BUFFER_SIZE 1048576
+// This is 4 * 1024 * 1024, should be plenty big enough to fit a
+// 1024x1024 rgb png
+#define PNG_BUFFER_SIZE 4194304
 unsigned char png_buffer[PNG_BUFFER_SIZE];
 
 png_alloc_size_t save_png_texture(paletted_texture_t* tex, char* filename) {
-  //png_image png;
-  //memset(&png, 0, sizeof(png_image));
-  //png.version = PNG_IMAGE_VERSION;
-  //png.width = 128;
-  //png.height = 256;
-  //png.colormap_entries = 0;
-  //png.format = PNG_FORMAT_GRAY;
-  //png.flags = 0;
-  //uint8_t* texture_expanded = expand_texture(tex);
-  //png_image_write_to_file(
-  //  &png,
-  //  filename,
-  //  0 /* convert_to_8_bit */,
-  //  texture_expanded,
-  //  0 /* row_stride */,
-  //  NULL /* colormap */);
-
   png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
-  //png_image_write_to_memory(
-  //  &png,
-  //  png_buffer,
-  //  &memory_bytes,
-  //  0,
-  //  texture_expanded,
-  //  0,
-  //  NULL);
 
   png_image rgb_png;
   memset(&rgb_png, 0, sizeof(png_image));
@@ -266,7 +243,7 @@ void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t r
   }
 }
 
-void save_png_write_buffer() {
+png_alloc_size_t save_png_write_buffer() {
   png_image png;
   memset(&png, 0, sizeof(png_image));
   png.version = PNG_IMAGE_VERSION;
@@ -283,46 +260,17 @@ void save_png_write_buffer() {
     png_write_buffer,
     0,
     NULL);
-}
-
-png_alloc_size_t save_png_texture_with_palette(paletted_texture_t* tex, char* dontcare, uint8_t column, uint8_t row) {
-  png_image png;
-  memset(&png, 0, sizeof(png_image));
-  png.version = PNG_IMAGE_VERSION;
-  png.width = 128;
-  png.height = 256;
-  png.colormap_entries = 0;
-  png.format = PNG_FORMAT_RGB;
-  png.flags = 0;
-  uint8_t* texture_expanded = expand_texture_paletted(tex, column, row);
-  char itoa_buf[30];
-  char filename[30];
-  memset(filename, 0, 30);
-  strcat(filename, "googa");
-  sprintf(itoa_buf, "%02x", column);
-  strcat(filename, itoa_buf);
-  strcat(filename, "-");
-  sprintf(itoa_buf, "%02x", row);
-  strcat(filename, itoa_buf);
-  strcat(filename, ".png");
-  png_image_write_to_file(
-    &png,
-    filename,
-    0,
-    texture_expanded,
-    0,
-    NULL);
-
   png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
   png_image_write_to_memory(
     &png,
     png_buffer,
     &memory_bytes,
     0,
-    texture_expanded,
+    png_write_buffer,
     0,
     NULL);
   return memory_bytes;
+
 }
 
 vertex_t* load_vertices(model_t* model, uint32_t object, uint32_t* num_read) {
