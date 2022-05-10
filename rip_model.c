@@ -193,9 +193,9 @@ uint8_t* expand_texture_rgb(paletted_texture_t* tex) {
   return expanded;
 }
 
-// This is 4 * 1024 * 1024, should be plenty big enough to fit a
+// This is 5 * 1024 * 1024, should be plenty big enough to fit a
 // 1024x1024 rgb png
-#define PNG_BUFFER_SIZE 4194304
+#define PNG_BUFFER_SIZE 5242880
 unsigned char png_buffer[PNG_BUFFER_SIZE];
 
 png_alloc_size_t save_png_texture(paletted_texture_t* tex, char* filename) {
@@ -249,21 +249,29 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
 char* googa = "googa.png";
 
 // This is the buffer where raw pixels will be blitted to, used to generate the
-// png. 1024x1024 pixels RGB
-uint8_t png_write_buffer[3*1024*1024];
+// png. 1024x1024 pixels RGBA
+uint8_t png_write_buffer[4*1024*1024];
 
 void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t row, size_t offset_x, size_t offset_y) {
   uint8_t* texture_expanded = expand_texture_paletted(tex, column, row);
   for (int j = 0; j < 256; j++) {
     for (int i = 0; i < 128; i++) {
-      size_t to_x = 3 * (offset_x + i);
+      size_t to_x = 4 * (offset_x + i);
       size_t to_y = offset_y + j;
-      png_write_buffer[3 * 1024 * to_y + to_x + 0] = texture_expanded[3 * (128 *
+      png_write_buffer[4 * 1024 * to_y + to_x + 0] = texture_expanded[3 * (128 *
       j + i) + 0];
-      png_write_buffer[3 * 1024 * to_y + to_x + 1] = texture_expanded[3 * (128 *
+      png_write_buffer[4 * 1024 * to_y + to_x + 1] = texture_expanded[3 * (128 *
       j + i) + 1];
-      png_write_buffer[3 * 1024 * to_y + to_x + 2] = texture_expanded[3 * (128 *
+      png_write_buffer[4 * 1024 * to_y + to_x + 2] = texture_expanded[3 * (128 *
       j + i) + 2];
+      int color_is_black = 0;
+      if (texture_expanded[3 * (128 * j + i) + 0] == 0
+        && texture_expanded[3 * (128 * j + i) + 1] == 0
+        && texture_expanded[3 * (128 * j + i) + 2] == 0) {
+        fprintf(stderr, "blakc pixel");
+        color_is_black = 1;
+      }
+      png_write_buffer[4 * 1024 * to_y + to_x + 3] = color_is_black ? 0 : 255;
     }
   }
 }
@@ -275,7 +283,7 @@ png_alloc_size_t save_png_write_buffer() {
   png.width = 1024;
   png.height = 1024;
   png.colormap_entries = 0;
-  png.format = PNG_FORMAT_RGB;
+  png.format = PNG_FORMAT_RGBA;
   png.flags = 0;
   char* filename = "mega-texture.png";
   png_image_write_to_file(
@@ -935,7 +943,9 @@ png_alloc) {
     .name = "material",
     .has_pbr_metallic_roughness = 1,
     .pbr_metallic_roughness = metallic_roughness,
-    .double_sided = 1
+    .double_sided = 1,
+    .alpha_mode = cgltf_alpha_mode_mask,
+    .alpha_cutoff = 0.5
   };
 
   cgltf_attribute attributes[2 * object_count];
