@@ -169,35 +169,35 @@ uint8_t* expand_texture_rgb(paletted_texture_t* tex) {
 }
 
 #define PNG_BUFFER_SIZE 1048576
-unsigned char* png_buffer[PNG_BUFFER_SIZE];
+unsigned char png_buffer[PNG_BUFFER_SIZE];
 
 png_alloc_size_t save_png_texture(paletted_texture_t* tex, char* filename) {
-  png_image png;
-  memset(&png, 0, sizeof(png_image));
-  png.version = PNG_IMAGE_VERSION;
-  png.width = 128;
-  png.height = 256;
-  png.colormap_entries = 0;
-  png.format = PNG_FORMAT_GRAY;
-  png.flags = 0;
-  uint8_t* texture_expanded = expand_texture(tex);
-  png_image_write_to_file(
-    &png,
-    filename,
-    0 /* convert_to_8_bit */,
-    texture_expanded,
-    0 /* row_stride */,
-    NULL /* colormap */);
+  //png_image png;
+  //memset(&png, 0, sizeof(png_image));
+  //png.version = PNG_IMAGE_VERSION;
+  //png.width = 128;
+  //png.height = 256;
+  //png.colormap_entries = 0;
+  //png.format = PNG_FORMAT_GRAY;
+  //png.flags = 0;
+  //uint8_t* texture_expanded = expand_texture(tex);
+  //png_image_write_to_file(
+  //  &png,
+  //  filename,
+  //  0 /* convert_to_8_bit */,
+  //  texture_expanded,
+  //  0 /* row_stride */,
+  //  NULL /* colormap */);
 
   png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
-  png_image_write_to_memory(
-    &png,
-    png_buffer,
-    &memory_bytes,
-    0,
-    texture_expanded,
-    0,
-    NULL);
+  //png_image_write_to_memory(
+  //  &png,
+  //  png_buffer,
+  //  &memory_bytes,
+  //  0,
+  //  texture_expanded,
+  //  0,
+  //  NULL);
 
   png_image rgb_png;
   memset(&rgb_png, 0, sizeof(png_image));
@@ -260,10 +260,10 @@ png_alloc_size_t save_png_texture_with_palette(paletted_texture_t* tex, char* do
   char filename[30];
   memset(filename, 0, 30);
   strcat(filename, "googa");
-  sprintf(itoa_buf, "%d", column);
+  sprintf(itoa_buf, "%02x", column);
   strcat(filename, itoa_buf);
   strcat(filename, "-");
-  sprintf(itoa_buf, "%d", row);
+  sprintf(itoa_buf, "%02x", row);
   strcat(filename, itoa_buf);
   strcat(filename, ".png");
   png_image_write_to_file(
@@ -1090,6 +1090,10 @@ int main(int argc, char** argv) {
   memset(texcoord_table, 0, new_model.object_count * sizeof(float*));
   size_t texcoord_counts[new_model.object_count];
   memset(texcoord_counts, 0, new_model.object_count * sizeof(size_t));
+
+  uint16_t exported_palettes[16];
+  size_t exported_palettes_count = 0;
+
   for (int j = 0; j < new_model.object_count; j++) {
     uint32_t num_read;
     vertex_t* verts;
@@ -1150,6 +1154,27 @@ int main(int argc, char** argv) {
       flat_tris[6 * i + 3] = 6 * i + 3;
       flat_tris[6 * i + 4] = 6 * i + 4;
       flat_tris[6 * i + 5] = 6 * i + 5;
+
+      uint8_t this_palette = quads[i].palette;
+      uint8_t this_clut = quads[i].clut;
+      uint16_t pal_clut_packed = (this_clut << 8) | this_palette;
+      int palette_is_new = 1;
+      for (int pal = 0; pal < exported_palettes_count; pal++) {
+        if (exported_palettes[pal] == pal_clut_packed) {
+          palette_is_new = 0;
+        }
+      }
+      if (palette_is_new) {
+        if (exported_palettes_count >= 16) {
+          die("Too many palettes referenced in file!");
+        }
+        exported_palettes[exported_palettes_count++] = pal_clut_packed;
+        fprintf(stderr,
+          "Encountered new palette %04x (y=%02x, x=%02x)\n",
+          pal_clut_packed,
+          pal_clut_packed >> 6,
+          pal_clut_packed & 0x3f);
+      }
     }
     for (int i = 0; i < num_tris_read; i++) {
       face_tri_t* tris = polys.tris;
@@ -1193,14 +1218,18 @@ int main(int argc, char** argv) {
   );
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
-  save_png_texture_with_palette(&tex, argv[5], 0, 0xf6);
-  save_png_texture_with_palette(&tex, argv[5], 0, 0xf8);
-  save_png_texture_with_palette(&tex, argv[5], 0, 0xfa);
-  save_png_texture_with_palette(&tex, argv[5], 0, 0xfc);
-  save_png_texture_with_palette(&tex, argv[5], 0, 0xfe);
-  save_png_texture_with_palette(&tex, argv[5], 1, 0xf6);
-  save_png_texture_with_palette(&tex, argv[5], 1, 0xf8);
-  save_png_texture_with_palette(&tex, argv[5], 1, 0xfa);
-  save_png_texture_with_palette(&tex, argv[5], 1, 0xfc);
-  save_png_texture_with_palette(&tex, argv[5], 1, 0xfe);
+  for (int pal = 0; pal < exported_palettes_count; pal++) {
+    uint16_t clut = exported_palettes[pal];
+    fprintf(stderr, "Loading the texture with %02x,%02x\n", clut & 0x3f, clut >> 6);
+    size_t ex = save_png_texture_with_palette(&tex, argv[5], clut & 0x3f, clut >> 6);
+    fprintf(stderr, "Wrote a png with size %lu\nFirst coupla bytes:\n", ex);
+    for (size_t j = 0; j < 0x4; j++) {
+      for (size_t i = 0; i < 0x8; i++) {
+        fprintf(stderr, "%02x%02x ",
+          png_buffer[0x10 * j + 2 * i],
+          png_buffer[0x10 * j + 2 * i + 1]);
+      }
+      fprintf(stderr, "\n");
+    }
+  }
 }
