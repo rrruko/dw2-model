@@ -609,7 +609,10 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animation, int32_t* node_tree, size_t object_count) {
+void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t**
+tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count,
+animation_t* animation, int32_t* node_tree, size_t object_count, size_t
+png_alloc) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -663,7 +666,9 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   }
   char* animation_input_encoded = octet_stream_encode(animation_input, 30 * sizeof(float));
 
-  cgltf_buffer buffers[6] = {
+  char* png_encoded = octet_stream_encode(png_buffer, png_alloc);
+
+  cgltf_buffer buffers[7] = {
     {
       .name = "vertex_buffer",
       .size = 4 * 3 * total_vertices,
@@ -694,9 +699,14 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .name = "texcoord",
       .size = 4 * 2 * total_texcoords,
       .uri = texcoord_encoded
+    },
+    {
+      .name = "texture",
+      .size = png_alloc,
+      .uri = png_encoded
     }
   };
-  cgltf_buffer_view buffer_views[6] = {
+  cgltf_buffer_view buffer_views[7] = {
     {
       .name = "vertex_buffer_view",
       .buffer = &buffers[0],
@@ -738,6 +748,12 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .buffer = &buffers[5],
       .offset = 0,
       .size = 4 * 2 * total_texcoords
+    },
+    {
+      .name = "texture_view",
+      .buffer = &buffers[6],
+      .offset = 0,
+      .size = png_alloc
     }
   };
   cgltf_accessor accessors[5 * object_count + 1];
@@ -852,6 +868,50 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   accessors[5 * object_count].min[0] = 0;
   accessors[5 * object_count].max[0] = 29 * 0.0333333;
 
+  cgltf_image images[1];
+  images[0] = (cgltf_image) {
+    .name = "texture",
+    .buffer_view = &buffer_views[6],
+    .mime_type = "image/png"
+  };
+
+  cgltf_sampler texture_samplers[1];
+  texture_samplers[0] = (cgltf_sampler) {
+    .name = "texture",
+    .mag_filter = 9728, // NEAREST
+    .min_filter = 9728, // NEAREST
+    .wrap_s = 33071, // CLAMP_TO_EDGE
+    .wrap_t = 33071 // CLAMP_TO_EDGE
+  };
+
+  cgltf_texture textures[1];
+  textures[0] = (cgltf_texture) {
+    .name = "texture",
+    .image = &images[0],
+    .sampler = &texture_samplers[0]
+  };
+
+  cgltf_texture_view texture_view = {
+    .texture = &textures[0]
+  };
+
+  cgltf_pbr_metallic_roughness metallic_roughness = {
+    .base_color_texture = texture_view,
+    .metallic_factor = 0,
+    .roughness_factor = 1
+  };
+  metallic_roughness.base_color_factor[0] = 1.0;
+  metallic_roughness.base_color_factor[1] = 1.0;
+  metallic_roughness.base_color_factor[2] = 1.0;
+  metallic_roughness.base_color_factor[3] = 1.0;
+
+  cgltf_material materials[1];
+  materials[0] = (cgltf_material) {
+    .name = "material",
+    .has_pbr_metallic_roughness = 1,
+    .pbr_metallic_roughness = metallic_roughness
+  };
+
   cgltf_attribute attributes[2 * object_count];
   for (int i = 0; i < object_count; i++) {
     attributes[2 * i] = (cgltf_attribute) {
@@ -874,7 +934,8 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
       .type = cgltf_primitive_type_triangles,
       .indices = &accessors[i+object_count],
       .attributes = &attributes[2 * i],
-      .attributes_count = 2
+      .attributes_count = 2,
+      .material = &materials[0]
     };
   }
 
@@ -984,10 +1045,22 @@ void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t** tri_
   data.accessors_count = 5 * object_count + 1;
 
   data.buffer_views = buffer_views;
-  data.buffer_views_count = 6;
+  data.buffer_views_count = 7;
 
   data.buffers = buffers;
-  data.buffers_count = 6;
+  data.buffers_count = 7;
+
+  data.materials = materials;
+  data.materials_count = 1;
+
+  data.images = images;
+  data.images_count = 1;
+
+  data.textures = textures;
+  data.textures_count = 1;
+
+  data.samplers = texture_samplers;
+  data.samplers_count = 1;
 
   data.nodes = nodes;
   data.nodes_count = object_count;
@@ -1226,17 +1299,6 @@ int main(int argc, char** argv) {
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
   }
-  make_epic_gltf_file(
-    flat_vert_table,
-    flat_vert_counts,
-    flat_tri_table,
-    flat_tri_counts,
-    texcoord_table,
-    texcoord_counts,
-    &animation,
-    new_model.node_tree,
-    new_model.object_count
-  );
   paletted_texture_t tex = load_texture(&new_model);
   save_png_texture(&tex, argv[5]);
   for (int pal = 0; pal < exported_palettes_count; pal++) {
@@ -1259,5 +1321,17 @@ int main(int argc, char** argv) {
     }
     */
   }
-  save_png_write_buffer();
+  png_alloc_size_t png_alloc = save_png_write_buffer();
+  make_epic_gltf_file(
+    flat_vert_table,
+    flat_vert_counts,
+    flat_tri_table,
+    flat_tri_counts,
+    texcoord_table,
+    texcoord_counts,
+    &animation,
+    new_model.node_tree,
+    new_model.object_count,
+    png_alloc - 2 // ???
+  );
 }
