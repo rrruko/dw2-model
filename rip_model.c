@@ -1105,18 +1105,45 @@ int main(int argc, char** argv) {
 
     for (int i = 0; i < num_quads_read; i++) {
       face_quad_t* quads = polys.quads;
-      texcoords[12 * i +  0] = quads[i].tex_c_x / 128.0;
-      texcoords[12 * i +  1] = quads[i].tex_c_y / 256.0;
-      texcoords[12 * i +  2] = quads[i].tex_b_x / 128.0;
-      texcoords[12 * i +  3] = quads[i].tex_b_y / 256.0;
-      texcoords[12 * i +  4] = quads[i].tex_a_x / 128.0;
-      texcoords[12 * i +  5] = quads[i].tex_a_y / 256.0;
-      texcoords[12 * i +  6] = quads[i].tex_b_x / 128.0;
-      texcoords[12 * i +  7] = quads[i].tex_b_y / 256.0;
-      texcoords[12 * i +  8] = quads[i].tex_c_x / 128.0;
-      texcoords[12 * i +  9] = quads[i].tex_c_y / 256.0;
-      texcoords[12 * i + 10] = quads[i].tex_d_x / 128.0;
-      texcoords[12 * i + 11] = quads[i].tex_d_y / 256.0;
+      uint8_t this_palette = quads[i].palette;
+      uint8_t this_clut = quads[i].clut;
+      uint16_t pal_clut_packed = (this_clut << 8) | this_palette;
+      int palette_is_new = 1;
+      int pal;
+      for (pal = 0; pal < exported_palettes_count; pal++) {
+        if (exported_palettes[pal] == pal_clut_packed) {
+          palette_is_new = 0;
+          break;
+        }
+      }
+      if (palette_is_new) {
+        if (exported_palettes_count >= 16) {
+          die("Too many palettes referenced in file!");
+        }
+        exported_palettes[exported_palettes_count++] = pal_clut_packed;
+        fprintf(stderr,
+          "Encountered new palette %04x (y=%02x, x=%02x)\n",
+          pal_clut_packed,
+          pal_clut_packed >> 6,
+          pal_clut_packed & 0x3f);
+      }
+
+      int tex_page_x = pal % 8;
+      int tex_page_y = pal / 8;
+      float tex_offs_x = (float) tex_page_x / 8;
+      float tex_offs_y = (float) tex_page_y / 4;
+      texcoords[12 * i +  0] = quads[i].tex_c_x / 1024.0 + tex_offs_x;
+      texcoords[12 * i +  1] = quads[i].tex_c_y / 1024.0 + tex_offs_y;
+      texcoords[12 * i +  2] = quads[i].tex_b_x / 1024.0 + tex_offs_x;
+      texcoords[12 * i +  3] = quads[i].tex_b_y / 1024.0 + tex_offs_y;
+      texcoords[12 * i +  4] = quads[i].tex_a_x / 1024.0 + tex_offs_x;
+      texcoords[12 * i +  5] = quads[i].tex_a_y / 1024.0 + tex_offs_y;
+      texcoords[12 * i +  6] = quads[i].tex_b_x / 1024.0 + tex_offs_x;
+      texcoords[12 * i +  7] = quads[i].tex_b_y / 1024.0 + tex_offs_y;
+      texcoords[12 * i +  8] = quads[i].tex_c_x / 1024.0 + tex_offs_x;
+      texcoords[12 * i +  9] = quads[i].tex_c_y / 1024.0 + tex_offs_y;
+      texcoords[12 * i + 10] = quads[i].tex_d_x / 1024.0 + tex_offs_x;
+      texcoords[12 * i + 11] = quads[i].tex_d_y / 1024.0 + tex_offs_y;
       flat_verts[18 * i +  0] = verts[quads[i].vertex_c].x / 4096.0;
       flat_verts[18 * i +  1] = verts[quads[i].vertex_c].y / 4096.0;
       flat_verts[18 * i +  2] = verts[quads[i].vertex_c].z / 4096.0;
@@ -1141,14 +1168,18 @@ int main(int argc, char** argv) {
       flat_tris[6 * i + 3] = 6 * i + 3;
       flat_tris[6 * i + 4] = 6 * i + 4;
       flat_tris[6 * i + 5] = 6 * i + 5;
-
-      uint8_t this_palette = quads[i].palette;
-      uint8_t this_clut = quads[i].clut;
+    }
+    for (int i = 0; i < num_tris_read; i++) {
+      face_tri_t* tris = polys.tris;
+      uint8_t this_palette = tris[i].palette;
+      uint8_t this_clut = tris[i].clut;
       uint16_t pal_clut_packed = (this_clut << 8) | this_palette;
       int palette_is_new = 1;
-      for (int pal = 0; pal < exported_palettes_count; pal++) {
+      int pal;
+      for (pal = 0; pal < exported_palettes_count; pal++) {
         if (exported_palettes[pal] == pal_clut_packed) {
           palette_is_new = 0;
+          break;
         }
       }
       if (palette_is_new) {
@@ -1162,15 +1193,18 @@ int main(int argc, char** argv) {
           pal_clut_packed >> 6,
           pal_clut_packed & 0x3f);
       }
-    }
-    for (int i = 0; i < num_tris_read; i++) {
-      face_tri_t* tris = polys.tris;
-      texcoords[6 * i + 0 + (12 * num_quads_read)] = tris[i].tex_a_x / 128.0;
-      texcoords[6 * i + 1 + (12 * num_quads_read)] = tris[i].tex_a_y / 256.0;
-      texcoords[6 * i + 2 + (12 * num_quads_read)] = tris[i].tex_c_x / 128.0;
-      texcoords[6 * i + 3 + (12 * num_quads_read)] = tris[i].tex_c_y / 256.0;
-      texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 128.0;
-      texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 256.0;
+
+      int tex_page_x = pal % 8;
+      int tex_page_y = pal / 8;
+      float tex_offs_x = (float) tex_page_x / 8;
+      float tex_offs_y = (float) tex_page_y / 4;
+
+      texcoords[6 * i + 0 + (12 * num_quads_read)] = tris[i].tex_a_x / 1024.0 + tex_offs_x;
+      texcoords[6 * i + 1 + (12 * num_quads_read)] = tris[i].tex_a_y / 1024.0 + tex_offs_y;
+      texcoords[6 * i + 2 + (12 * num_quads_read)] = tris[i].tex_c_x / 1024.0 + tex_offs_x;
+      texcoords[6 * i + 3 + (12 * num_quads_read)] = tris[i].tex_c_y / 1024.0 + tex_offs_y;
+      texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 1024.0 + tex_offs_x;
+      texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 1024.0 + tex_offs_y;
       size_t this_tri_offset = 18 * num_quads_read + 9 * i;
       flat_verts[this_tri_offset + 0] = verts[tris[i].vertex_a].x / 4096.0;
       flat_verts[this_tri_offset + 1] = verts[tris[i].vertex_a].y / 4096.0;
