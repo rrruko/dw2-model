@@ -268,7 +268,6 @@ void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t r
       if (texture_expanded[3 * (128 * j + i) + 0] == 0
         && texture_expanded[3 * (128 * j + i) + 1] == 0
         && texture_expanded[3 * (128 * j + i) + 2] == 0) {
-        fprintf(stderr, "blakc pixel");
         color_is_black = 1;
       }
       png_write_buffer[4 * 1024 * to_y + to_x + 3] = color_is_black ? 0 : 255;
