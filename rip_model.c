@@ -349,6 +349,7 @@ typedef struct animation_s {
   uint32_t file_sector;
   uint32_t* offsets;
   uint8_t* frame_table;
+  uint32_t frame_count;
 } animation_t;
 
 animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
@@ -368,16 +369,31 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
     die("fread failure, an error occured or EOF (animation offsets)");
   }
   iso_seek_forward(iso, sizeof(uint32_t) * 2); // Don't know what these bytes mean
-  uint32_t frame_count = 30; // Unsure if this is encoded anywhere or can change
-  animation.frame_table = malloc(object_count * frame_count);
-  items_read = iso_fread(
-    iso,
-    animation.frame_table,
-    sizeof(uint8_t),
-    object_count * frame_count);
-  if (items_read != object_count * frame_count) {
-    die("fread failure, an error occured or EOF (frame table)");
+
+  // Make space for 256 frames, should be enough, error if we run out
+  animation.frame_table = malloc(object_count * 256);
+  int frames_left = 1;
+  uint32_t frame_count = 0;
+  while (frames_left) {
+    items_read = iso_fread(
+      iso,
+      &animation.frame_table[object_count * frame_count],
+      sizeof(uint8_t),
+      object_count);
+    if (items_read != object_count) {
+      die("fread failure, an error occured or EOF (frame table)");
+    }
+    if (animation.frame_table[object_count * frame_count] == 0xfe) {
+      frames_left = 0;
+    } else {
+      frame_count++;
+    }
+    if (frame_count >= 256) {
+      die("Too many frames. Could this be a bug?");
+    }
   }
+  fprintf(stderr, "Frame count: %d\n", frame_count);
+  animation.frame_count = frame_count;
   return animation;
 }
 
@@ -474,8 +490,8 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
 }
 
 void serialize_animation(animation_t* animation, uint32_t object_count, float** rotation_out, float** translation_out) {
-  float* rotation = malloc(30 * 16 * object_count); // 30 quaternions, each quaternion is 4 floats, times object_count
-  float* translation = malloc(30 * 12 * object_count); // 30 translation vectors of 3 floats each, times object_count
+  float* rotation = malloc(animation->frame_count * 16 * object_count); // N quaternions, each quaternion is 4 floats, times object_count
+  float* translation = malloc(animation->frame_count * 12 * object_count); // N translation vectors of 3 floats each, times object_count
   uint32_t object_start_rot = 0;
   uint32_t object_start_trans = 0;
   for (int object = 0; object < object_count; object++) {
@@ -483,8 +499,7 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
     iso_seek_to_sector(animation->iso, animation->file_sector);
     iso_seek_forward(animation->iso, offset);
     matrix_t m;
-    // Does the file have a frame count or is it always 30?
-    for (int frame = 0; frame < 30; frame++) {
+    for (int frame = 0; frame < animation->frame_count; frame++) {
       size_t items_read = iso_fread(
         animation->iso,
         &m,
@@ -514,15 +529,15 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
       translation[object_start_trans + frame * 3 + 1] = -t.y / 4096.0;
       translation[object_start_trans + frame * 3 + 2] = t.z / 4096.0;
     }
-    object_start_rot += 30 * 4;
-    object_start_trans += 30 * 3;
+    object_start_rot += animation->frame_count * 4;
+    object_start_trans += animation->frame_count * 3;
   }
-  float* rotation_final = malloc(30 * 16 * object_count);
-  float* translation_final = malloc(30 * 16 * object_count);
+  float* rotation_final = malloc(animation->frame_count * 16 * object_count);
+  float* translation_final = malloc(animation->frame_count * 16 * object_count);
   for (int object = 0; object < object_count; object++) {
-    object_start_rot = 30 * 4 * object;
-    object_start_trans = 30 * 3 * object;
-    for (int frame = 0; frame < 30; frame++) {
+    object_start_rot = animation->frame_count * 4 * object;
+    object_start_trans = animation->frame_count * 3 * object;
+    for (int frame = 0; frame < animation->frame_count; frame++) {
       uint8_t from = animation->frame_table[frame * object_count + object];
       memcpy(
         &rotation_final[object_start_rot + frame * 4],
@@ -703,17 +718,17 @@ png_alloc) {
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
   char* rotation_encoded = octet_stream_encode(rotation_anim,
-    object_count * 30 * 4 * sizeof(float));
+    object_count * animation->frame_count * 4 * sizeof(float));
   char* translation_encoded = octet_stream_encode(translation_anim,
-    object_count * 30 * 3 * sizeof(float));
+    object_count * animation->frame_count * 3 * sizeof(float));
 
   char* texcoord_encoded = octet_stream_encode(all_texcoords, 4 * 2 * total_texcoords);
 
-  float animation_input[30];
-  for (int i = 0; i < 30; i++) {
+  float animation_input[animation->frame_count];
+  for (int i = 0; i < animation->frame_count; i++) {
     animation_input[i] = (float) (i * 0.0333333); // 30 FPS
   }
-  char* animation_input_encoded = octet_stream_encode(animation_input, 30 * sizeof(float));
+  char* animation_input_encoded = octet_stream_encode(animation_input, animation->frame_count * sizeof(float));
 
   char* png_encoded = octet_stream_encode(png_buffer, png_alloc);
 
@@ -731,17 +746,17 @@ png_alloc) {
     },
     {
       .name = "animation_rotation_input",
-      .size = 30 * sizeof(float),
+      .size = animation->frame_count * sizeof(float),
       .uri = animation_input_encoded
     },
     {
       .name = "animation_rotation_output",
-      .size = object_count * 30 * 4 * sizeof(float),
+      .size = object_count * animation->frame_count * 4 * sizeof(float),
       .uri = rotation_encoded
     },
     {
       .name = "animation_translation_output",
-      .size = object_count * 30 * 3 * sizeof(float),
+      .size = object_count * animation->frame_count * 3 * sizeof(float),
       .uri = translation_encoded
     },
     {
@@ -776,20 +791,20 @@ png_alloc) {
       .name = "animation_rotation_input",
       .buffer = &buffers[2],
       .offset = 0,
-      .size = 30 * sizeof(float)
+      .size = animation->frame_count * sizeof(float)
     },
     {
       .name = "animation_rotation_output_view",
       .buffer = &buffers[3],
       .offset = 0,
-      .size = object_count * 30 * 4 * sizeof(float),
+      .size = object_count * animation->frame_count * 4 * sizeof(float),
       .stride = 16
     },
     {
       .name = "animation_translation_output_view",
       .buffer = &buffers[4],
       .offset = 0,
-      .size = object_count * 30 * 3 * sizeof(float),
+      .size = object_count * animation->frame_count * 3 * sizeof(float),
       .stride = 12
     },
     {
@@ -870,8 +885,8 @@ png_alloc) {
       .component_type = cgltf_component_type_r_32f,
       .normalized = 0,
       .type = cgltf_type_vec4,
-      .offset = 30 * 16 * i,
-      .count = 30,
+      .offset = animation->frame_count * 16 * i,
+      .count = animation->frame_count,
       .stride = 16,
       .buffer_view = &buffer_views[3]
     };
@@ -880,8 +895,8 @@ png_alloc) {
       .component_type = cgltf_component_type_r_32f,
       .normalized = 0,
       .type = cgltf_type_vec3,
-      .offset = 30 * 12 * i,
-      .count = 30,
+      .offset = animation->frame_count * 12 * i,
+      .count = animation->frame_count,
       .stride = 12,
       .buffer_view = &buffer_views[4]
     };
@@ -908,7 +923,7 @@ png_alloc) {
     .normalized = 0,
     .type = cgltf_type_scalar,
     .offset = 0,
-    .count = 30,
+    .count = animation->frame_count,
     .stride = 4,
     .buffer_view = &buffer_views[2],
     .has_min = 1,
@@ -1155,7 +1170,7 @@ int main(int argc, char** argv) {
   animation = load_animation(&iso, animation_sector, new_model.object_count);
 
   fprintf(stderr, "Frame table:\n");
-  for (int frame = 0; frame < 30; frame++) {
+  for (int frame = 0; frame < animation.frame_count; frame++) {
     for (int object = 0; object < new_model.object_count; object++) {
       fprintf(stderr, "%02d ",
         animation.frame_table[frame * new_model.object_count + object]);
