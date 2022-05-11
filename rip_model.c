@@ -517,8 +517,25 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
     object_start_rot += 30 * 4;
     object_start_trans += 30 * 3;
   }
-  *rotation_out = rotation;
-  *translation_out = translation;
+  float* rotation_final = malloc(30 * 16 * object_count);
+  float* translation_final = malloc(30 * 16 * object_count);
+  for (int object = 0; object < object_count; object++) {
+    object_start_rot = 30 * 4 * object;
+    object_start_trans = 30 * 3 * object;
+    for (int frame = 0; frame < 30; frame++) {
+      uint8_t from = animation->frame_table[frame * object_count + object];
+      memcpy(
+        &rotation_final[object_start_rot + frame * 4],
+        &rotation[object_start_rot + from * 4],
+        4 * sizeof(float));
+      memcpy(
+        &translation_final[object_start_trans + frame * 3],
+        &translation[object_start_trans + from * 3],
+        3 * sizeof(float));
+    }
+  }
+  *rotation_out = rotation_final;
+  *translation_out = translation_final;
 }
 
 // We transform a vertex by looking up its object's transform matrix and
