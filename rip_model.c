@@ -226,7 +226,7 @@ png_alloc_size_t save_png_texture(paletted_texture_t* tex, char* filename) {
 
 uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_t row) {
   uint32_t stride = 64;
-  uint8_t* expanded = malloc(3 * 128 * 256);
+  uint8_t* expanded = malloc(4 * 128 * 256);
   for (int i = 0; i < 16384; i++) {
     uint8_t lower = tex->texture[i] & 0x0f;
     uint8_t upper = (tex->texture[i] & 0xf0) >> 4;
@@ -236,12 +236,14 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
     memcpy(&color_lower, &palette[2 * lower], sizeof(uint16_t));
     memcpy(&color_upper, &palette[2 * upper], sizeof(uint16_t));
 
-    expanded[6 * i + 0] = (color_lower & 0x001f) << 3;
-    expanded[6 * i + 1] = (color_lower & 0x03e0) >> 2;
-    expanded[6 * i + 2] = (color_lower & 0x7c00) >> 7;
-    expanded[6 * i + 3] = (color_upper & 0x001f) << 3;
-    expanded[6 * i + 4] = (color_upper & 0x03e0) >> 2;
-    expanded[6 * i + 5] = (color_upper & 0x7c00) >> 7;
+    expanded[8 * i + 0] = (color_lower & 0x001f) << 3;
+    expanded[8 * i + 1] = (color_lower & 0x03e0) >> 2;
+    expanded[8 * i + 2] = (color_lower & 0x7c00) >> 7;
+    expanded[8 * i + 3] = (color_lower == 0x0000) ? 0 : 255;
+    expanded[8 * i + 4] = (color_upper & 0x001f) << 3;
+    expanded[8 * i + 5] = (color_upper & 0x03e0) >> 2;
+    expanded[8 * i + 6] = (color_upper & 0x7c00) >> 7;
+    expanded[8 * i + 7] = (color_upper == 0x0000) ? 0 : 255;
   }
   return expanded;
 }
@@ -258,19 +260,14 @@ void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t r
     for (int i = 0; i < 128; i++) {
       size_t to_x = 4 * (offset_x + i);
       size_t to_y = offset_y + j;
-      png_write_buffer[4 * 1024 * to_y + to_x + 0] = texture_expanded[3 * (128 *
+      png_write_buffer[4 * 1024 * to_y + to_x + 0] = texture_expanded[4 * (128 *
       j + i) + 0];
-      png_write_buffer[4 * 1024 * to_y + to_x + 1] = texture_expanded[3 * (128 *
+      png_write_buffer[4 * 1024 * to_y + to_x + 1] = texture_expanded[4 * (128 *
       j + i) + 1];
-      png_write_buffer[4 * 1024 * to_y + to_x + 2] = texture_expanded[3 * (128 *
+      png_write_buffer[4 * 1024 * to_y + to_x + 2] = texture_expanded[4 * (128 *
       j + i) + 2];
-      int color_is_black = 0;
-      if (texture_expanded[3 * (128 * j + i) + 0] == 0
-        && texture_expanded[3 * (128 * j + i) + 1] == 0
-        && texture_expanded[3 * (128 * j + i) + 2] == 0) {
-        color_is_black = 1;
-      }
-      png_write_buffer[4 * 1024 * to_y + to_x + 3] = color_is_black ? 0 : 255;
+      png_write_buffer[4 * 1024 * to_y + to_x + 3] = texture_expanded[4 * (128 *
+      j + i) + 3];
     }
   }
 }
