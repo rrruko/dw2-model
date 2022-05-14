@@ -58,6 +58,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     iso->offset += bytes_to_read;
   } else {
     char* temp = malloc(bytes_to_read);
+    char* temp_allocated = temp;
     // Otherwise, we need to split the calls
     if (remaining_bytes_in_sector > 0) {
       result = fread(temp, remaining_bytes_in_sector, 1, iso->fp);
@@ -90,6 +91,7 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     iso_seek_forward(iso, bytes_to_read);
     // void* memcpy( void* dest, const void* src, std::size_t count );
     memcpy(buf, temp - bytes_to_read, bytes_to_read);
+    free(temp_allocated);
   }
   return items;
 }

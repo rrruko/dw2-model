@@ -220,6 +220,7 @@ void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t r
       j + i) + 3];
     }
   }
+  free(texture_expanded);
 }
 
 png_alloc_size_t save_png_write_buffer() {
@@ -481,11 +482,11 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
       fmatrix_t fm = matrix_to_fmatrix(m);
       quaternion_t q = matrix_to_quaternion(fm);
       normalize_quaternion_inplace(&q);
-      fprintf(stderr, "object %d/%d, keyframe %d/%d\n",
-        object, object_count,
-        frame, animation->frame_count);
-      display_matrix_debug(&m);
-      display_quaternion_debug(&q);
+      //fprintf(stderr, "object %d/%d, keyframe %d/%d\n",
+      //  object, object_count,
+      //  frame, animation->frame_count);
+      //display_matrix_debug(&m);
+      //display_quaternion_debug(&q);
       vertex_t t = {0};
       items_read = iso_fread(
         animation->iso,
@@ -524,6 +525,8 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
         3 * sizeof(float));
     }
   }
+  free(rotation);
+  free(translation);
   *rotation_out = rotation_final;
   *translation_out = translation_final;
 }
@@ -688,13 +691,18 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   serialize_animation(animation, object_count, &rotation_anim, &translation_anim);
 
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
+  free(all_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
+  free(all_triangles);
   char* rotation_encoded = octet_stream_encode(rotation_anim,
     object_count * animation->frame_count * 4 * sizeof(float));
+  free(rotation_anim);
   char* translation_encoded = octet_stream_encode(translation_anim,
     object_count * animation->frame_count * 3 * sizeof(float));
+  free(translation_anim);
 
   char* texcoord_encoded = octet_stream_encode(all_texcoords, 4 * 2 * total_texcoords);
+  free(all_texcoords);
 
   float animation_input[animation->frame_count];
   for (int i = 0; i < animation->frame_count; i++) {
@@ -1018,6 +1026,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       }
     }
     if (children_count == 0) {
+      free(children);
       children = NULL;
     }
     nodes[i] = (cgltf_node) {
@@ -1122,6 +1131,18 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   cgltf_result result = cgltf_write_file(&options, out_filename, &data);
   if (result != cgltf_result_success) {
     fprintf(stderr, "Bad cgltf result: %d\n", result);
+  }
+
+  free(vertex_encoded);
+  free(index_encoded);
+  free(rotation_encoded);
+  free(translation_encoded);
+  free(texcoord_encoded);
+  free(animation_input_encoded);
+  free(png_encoded);
+
+  for (int i = 0; i < object_count; i++) {
+    free(nodes[i].children);
   }
 }
 
@@ -1326,12 +1347,15 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
       flat_tris[3 * i + 1 + (6 * num_quads_read)] = 3 * i + 1 + (6 * num_quads_read);
       flat_tris[3 * i + 2 + (6 * num_quads_read)] = 3 * i + 2 + (6 * num_quads_read);
     }
+    free(polys.quads);
+    free(polys.tris);
     flat_tri_table[j] = flat_tris;
     flat_tri_counts[j] = 2 * num_quads_read + num_tris_read;
     texcoord_table[j] = texcoords;
     texcoord_counts[j] = num_quads_read * 6 + num_tris_read * 3;
     texcoords_seen += num_quads_read * 4 + num_tris_read * 3;
     verts_seen += num_read;
+    free(verts);
   }
   paletted_texture_t tex = load_texture(&new_model);
   for (int pal = 0; pal < exported_palettes_count; pal++) {
@@ -1341,6 +1365,7 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
     size_t offset_y = 256 * (pal / 8);
     blit_to_png_write_buffer(&tex, clut & 0x3f, clut >> 6, offset_x, offset_y);
   }
+  free(tex.texture);
   png_alloc_size_t png_alloc = save_png_write_buffer();
   make_epic_gltf_file(
     name,
@@ -1355,6 +1380,20 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
     new_model.object_count,
     png_alloc
   );
+  free(new_model.skeleton);
+  free(new_model.node_tree);
+  free(new_model.vertex_offsets);
+  free(new_model.normal_offsets);
+  free(new_model.face_offsets);
+
+  for (int i = 0; i < new_model.object_count; i++) {
+    free(flat_vert_table[i]);
+    free(flat_tri_table[i]);
+    free(texcoord_table[i]);
+  }
+
+  free(animation.offsets);
+  free(animation.frame_table);
 }
 
 int main(int argc, char** argv) {
@@ -1390,5 +1429,8 @@ int main(int argc, char** argv) {
       model_sector,
       anim_sector);
     rip_model(&iso, name, model_sector, anim_sector);
+    free(line);
+    line = NULL;
   }
+  free(line);
 }
