@@ -166,63 +166,10 @@ paletted_texture_t load_texture(model_t* model) {
   return new_texture;
 }
 
-uint8_t* expand_texture(paletted_texture_t* tex) {
-  uint8_t* expanded = malloc(128 * 256);
-  for (int i = 0; i < 16384; i++) {
-    uint8_t this_byte = tex->texture[i];
-    uint8_t upper = (this_byte & 0xf0) >> 4;
-    uint8_t lower = (this_byte & 0x0f);
-    expanded[2*i+1] = 16 * (16 - (upper + 1));
-    expanded[2*i+0] = 16 * (16 - (lower + 1));
-  }
-  return expanded;
-}
-
-uint8_t* expand_texture_rgb(paletted_texture_t* tex) {
-  uint8_t* expanded = malloc(3 * 32 * 256);
-  for (int i = 0; i < 8192; i++) {
-    uint8_t lower_byte = tex->texture[2 * i];
-    uint8_t upper_byte = tex->texture[2 * i + 1];
-    uint8_t red = lower_byte & 0x1f;
-    uint8_t green = ((lower_byte & 0xe0) >> 5) | ((upper_byte & 0x03) << 3);
-    uint8_t blue = (upper_byte & 0x7c) >> 2;
-    expanded[3 * i + 0] = red << 3;
-    expanded[3 * i + 1] = green << 3;
-    expanded[3 * i + 2] = blue << 3;
-  }
-  return expanded;
-}
-
 // This is 5 * 1024 * 1024, should be plenty big enough to fit a
 // 1024x1024 rgb png
 #define PNG_BUFFER_SIZE 5242880
 unsigned char png_buffer[PNG_BUFFER_SIZE];
-
-png_alloc_size_t save_png_texture(paletted_texture_t* tex, char* filename) {
-  png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
-
-  png_image rgb_png;
-  memset(&rgb_png, 0, sizeof(png_image));
-  rgb_png.version = PNG_IMAGE_VERSION;
-  rgb_png.width = 32;
-  rgb_png.height = 256;
-  rgb_png.colormap_entries = 0;
-  rgb_png.format = PNG_FORMAT_RGB;
-  rgb_png.flags = 0;
-  uint8_t* texture_expanded_rgb = expand_texture_rgb(tex);
-  char* new_filename = calloc(strlen(filename) + 5, 1);
-  strcat(new_filename, "rgb-");
-  strcat(new_filename, filename);
-  png_image_write_to_file(
-    &rgb_png,
-    new_filename,
-    0 /* convert_to_8_bit */,
-    texture_expanded_rgb,
-    0 /* row_stride */,
-    NULL /* colormap */);
-
-  return memory_bytes;
-}
 
 uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_t row) {
   uint32_t stride = 64;
@@ -1390,7 +1337,6 @@ int main(int argc, char** argv) {
     verts_seen += num_read;
   }
   paletted_texture_t tex = load_texture(&new_model);
-  save_png_texture(&tex, argv[5]);
   for (int pal = 0; pal < exported_palettes_count; pal++) {
     uint16_t clut = exported_palettes[pal];
     fprintf(stderr, "Loading the texture with %02x,%02x\n", clut & 0x3f, clut >> 6);
