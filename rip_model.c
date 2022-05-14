@@ -1397,19 +1397,6 @@ int main(int argc, char** argv) {
     size_t offset_x = 128 * (pal % 8);
     size_t offset_y = 256 * (pal / 8);
     blit_to_png_write_buffer(&tex, clut & 0x3f, clut >> 6, offset_x, offset_y);
-
-    /*
-    size_t ex = save_png_texture_with_palette(&tex, argv[5], clut & 0x3f, clut >> 6);
-    fprintf(stderr, "Wrote a png with size %lu\nFirst coupla bytes:\n", ex);
-    for (size_t j = 0; j < 0x4; j++) {
-      for (size_t i = 0; i < 0x8; i++) {
-        fprintf(stderr, "%02x%02x ",
-          png_buffer[0x10 * j + 2 * i],
-          png_buffer[0x10 * j + 2 * i + 1]);
-      }
-      fprintf(stderr, "\n");
-    }
-    */
   }
   png_alloc_size_t png_alloc = save_png_write_buffer();
   make_epic_gltf_file(
