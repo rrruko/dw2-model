@@ -930,7 +930,7 @@ png_alloc) {
     .has_max = 1
   };
   accessors[5 * object_count].min[0] = 0;
-  accessors[5 * object_count].max[0] = 29 * 0.0333333;
+  accessors[5 * object_count].max[0] = (animation->frame_count - 1) * 0.0333333;
 
   cgltf_image images[1];
   images[0] = (cgltf_image) {
