@@ -463,9 +463,9 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
     float S = sqrt(1.0 + m.x[0] - m.x[4] - m.x[8]) * 2;
     quaternion_t q = {
       .w = (m.x[5] - m.x[7]) / S,
-      .x = (m.x[3] + m.x[1]) / S,
-      .y = 0.25 * S,
-      .z = (m.x[7] + m.x[5]) / S
+      .x = 0.25 * S,
+      .y = (m.x[3] + m.x[1]) / S,
+      .z = (m.x[6] + m.x[2]) / S
     };
     return q;
   } else if (m.x[4] > m.x[8]) {
