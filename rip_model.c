@@ -448,6 +448,7 @@ fmatrix_t matrix_to_fmatrix(matrix_t m) {
   return fm;
 }
 
+// See https://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
 quaternion_t matrix_to_quaternion(fmatrix_t m) {
   float trace = m.x[0] + m.x[4] + m.x[8];
   if (trace > 0) {
