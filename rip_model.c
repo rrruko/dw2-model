@@ -229,6 +229,7 @@ png_alloc_size_t save_png_write_buffer() {
   png.format = PNG_FORMAT_RGBA;
   png.flags = 0;
   char* filename = "mega-texture.png";
+  /*
   png_image_write_to_file(
     &png,
     filename,
@@ -236,6 +237,7 @@ png_alloc_size_t save_png_write_buffer() {
     png_write_buffer,
     0,
     NULL);
+  */
   png_alloc_size_t memory_bytes = PNG_BUFFER_SIZE;
   png_image_write_to_memory(
     &png,
@@ -643,10 +645,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(float** vertices, size_t* vertex_count, uint32_t**
-tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count,
-animation_t* animation, int32_t* node_tree, size_t object_count, size_t
-png_alloc) {
+void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animation, int32_t* node_tree, size_t object_count, size_t png_alloc) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -1111,26 +1110,23 @@ png_alloc) {
     .version = "2.0"
   };
 
+  size_t out_filename_len = strlen(working_dir) + strlen("/out.gltf") + 1;
+  char out_filename[out_filename_len];
+  memset(out_filename, 0, out_filename_len);
+  strcat(out_filename, working_dir);
+  strcat(out_filename, "/out.gltf");
   cgltf_options options = {0};
-  cgltf_result result = cgltf_write_file(&options, "out.gltf", &data);
+  cgltf_result result = cgltf_write_file(&options, out_filename, &data);
   if (result != cgltf_result_success) {
     fprintf(stderr, "Bad cgltf result: %d\n", result);
   }
 }
 
-int main(int argc, char** argv) {
-  if (argc < 6) {
-    die("Usage: ./rip_model.c INFILE MODEL_SECTOR ANIMATION_SECTOR FRAME OUTFILE");
+void rip_model(iso_t* iso, char* name, size_t model_sector, size_t anim_sector) {
+  struct stat st = {0};
+  if (stat(name, &st) == -1) {
+    mkdir(name, 0700);
   }
-  FILE* fp;
-  fp = fopen(argv[1], "r");
-  if (!fp) {
-    die("Failed to open file");
-  }
-
-  iso_t iso;
-  iso_open(&iso, fp);
-
   model_t new_model;
   uint32_t model_sector = strtoul(argv[2], NULL, 16);
   new_model = load_model(&iso, model_sector);
@@ -1346,6 +1342,7 @@ int main(int argc, char** argv) {
   }
   png_alloc_size_t png_alloc = save_png_write_buffer();
   make_epic_gltf_file(
+    name,
     flat_vert_table,
     flat_vert_counts,
     flat_tri_table,
@@ -1357,4 +1354,44 @@ int main(int argc, char** argv) {
     new_model.object_count,
     png_alloc
   );
+}
+
+int main(int argc, char** argv) {
+  if (argc < 2) {
+    die("Usage: ./rip_model.c ROM MODEL_TABLE");
+  }
+  FILE* fp;
+  fp = fopen(argv[1], "r");
+  if (!fp) {
+    die("Failed to open file");
+  }
+
+  iso_t iso;
+  iso_open(&iso, fp);
+
+  FILE* model_table_fp;
+  model_table_fp = fopen(argv[2], "r");
+  if (!model_table_fp) {
+    die("Failed to open model table file");
+  }
+
+  rip_model("AGU", 156209, 152761);
+
+  /*
+  char* line = NULL;
+  size_t len = 0;
+  size_t read = 0;
+  while ((read = getline(&line, &len, model_table_fp)) != -1) {
+    size_t model_sector = strtoul(line+8, NULL, 16);
+    size_t anim_sector = strtoul(line+14, NULL, 16);
+    char name[8];
+    memcpy(name, line, 7);
+    name[7] = 0;
+    fprintf(stderr, "File name %s sector numbers: (%lu, %lu)\n",
+      name,
+      model_sector,
+      anim_sector);
+    rip_model(&iso, name, model_sector, anim_sector);
+  }
+  */
 }
