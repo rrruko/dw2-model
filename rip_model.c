@@ -4,6 +4,9 @@
 #include <string.h>
 #include <png.h>
 #include <math.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "iso_reader.h"
 #define CGLTF_WRITE_IMPLEMENTATION
@@ -1122,18 +1125,18 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   }
 }
 
-void rip_model(iso_t* iso, char* name, size_t model_sector, size_t anim_sector) {
+void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sector) {
   struct stat st = {0};
   if (stat(name, &st) == -1) {
     mkdir(name, 0700);
+  } else {
+    return; // We already ripped this
   }
   model_t new_model;
-  uint32_t model_sector = strtoul(argv[2], NULL, 16);
-  new_model = load_model(&iso, model_sector);
+  new_model = load_model(iso, model_sector);
 
   animation_t animation;
-  uint32_t animation_sector = strtoul(argv[3], NULL, 16);
-  animation = load_animation(&iso, animation_sector, new_model.object_count);
+  animation = load_animation(iso, animation_sector, new_model.object_count);
 
   fprintf(stderr, "Frame table:\n");
   for (int frame = 0; frame < animation.frame_count; frame++) {
@@ -1143,8 +1146,6 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t anim_sector) 
     }
     fprintf(stderr, "\n");
   }
-
-  uint32_t frame = atoi(argv[4]);
 
   fprintf(stderr, "Loaded model\n");
   fprintf(stderr, "Model texture_sheet_offset: %xh\n", new_model.texture_sheet_offset);
@@ -1375,9 +1376,6 @@ int main(int argc, char** argv) {
     die("Failed to open model table file");
   }
 
-  rip_model("AGU", 156209, 152761);
-
-  /*
   char* line = NULL;
   size_t len = 0;
   size_t read = 0;
@@ -1393,5 +1391,4 @@ int main(int argc, char** argv) {
       anim_sector);
     rip_model(&iso, name, model_sector, anim_sector);
   }
-  */
 }
