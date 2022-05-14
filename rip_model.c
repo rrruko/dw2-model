@@ -489,6 +489,17 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
   }
 }
 
+void display_matrix_debug(matrix_t* m) {
+  fprintf(stderr, "m = | %04d %04d %04d |\n", m->x[0], m->x[1], m->x[2]);
+  fprintf(stderr, "    | %04d %04d %04d |\n", m->x[3], m->x[4], m->x[5]);
+  fprintf(stderr, "    | %04d %04d %04d |\n", m->x[6], m->x[7], m->x[8]);
+}
+
+void display_quaternion_debug(quaternion_t* q) {
+  fprintf(stderr, "q = %f + %fi + %fj + %fk (length=%f)\n",
+    q->w, q->x, q->y, q->z, sqrt(q->w*q->w + q->x*q->x + q->y*q->y + q->z*q->z));
+}
+
 void serialize_animation(animation_t* animation, uint32_t object_count, float** rotation_out, float** translation_out) {
   float* rotation = malloc(animation->frame_count * 16 * object_count); // N quaternions, each quaternion is 4 floats, times object_count
   float* translation = malloc(animation->frame_count * 12 * object_count); // N translation vectors of 3 floats each, times object_count
@@ -511,6 +522,8 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
       }
       fmatrix_t fm = matrix_to_fmatrix(m);
       quaternion_t q = matrix_to_quaternion(fm);
+      display_matrix_debug(&m);
+      display_quaternion_debug(&q);
       vertex_t t = {0};
       items_read = iso_fread(
         animation->iso,
