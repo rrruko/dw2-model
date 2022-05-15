@@ -1294,7 +1294,7 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
         }
       }
       if (palette_is_new) {
-        if (exported_palettes_count >= 16) {
+        if (exported_palettes_count >= 32) {
           die("Too many palettes referenced in file!");
         }
         exported_palettes[exported_palettes_count++] = pal_clut_packed;
@@ -1360,7 +1360,7 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
         }
       }
       if (palette_is_new) {
-        if (exported_palettes_count >= 16) {
+        if (exported_palettes_count >= 32) {
           die("Too many palettes referenced in file!");
         }
         exported_palettes[exported_palettes_count++] = pal_clut_packed;
