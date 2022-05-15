@@ -280,6 +280,7 @@ polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, ui
   iso_seek_forward(model->iso, 4);
   uint32_t count;
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
+  fprintf(stderr, "%u faces to read\n", count);
   face_quad_t* quads = malloc(sizeof(face_quad_t) * count);
   iso_fread(model->iso, quads, sizeof(face_quad_t), count);
   *num_quads_read = count;
@@ -1212,11 +1213,15 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
   for (int j = 0; j < new_model.object_count; j++) {
     uint32_t num_read;
     vertex_t* verts;
+    fprintf(stderr, "loading verts (%d/%d)\n", j, new_model.object_count);
     verts = load_vertices(&new_model, j, &num_read);
+    fprintf(stderr, "loaded %d verts\n", num_read);
     uint32_t num_quads_read;
     uint32_t num_tris_read;
     polys_t polys;
+    fprintf(stderr, "loading faces (%d/%d)\n", j, new_model.object_count);
     polys = load_faces(&new_model, j, &num_quads_read, &num_tris_read);
+    fprintf(stderr, "loaded %d faces\n", num_quads_read*2 + num_tris_read);
     uint32_t* flat_tris = calloc(
       num_quads_read * 2 + num_tris_read,
       3 * sizeof(uint32_t)
@@ -1357,7 +1362,9 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
     verts_seen += num_read;
     free(verts);
   }
+  fprintf(stderr, "loading texture\n");
   paletted_texture_t tex = load_texture(&new_model);
+  fprintf(stderr, "loaded texture\n");
   for (int pal = 0; pal < exported_palettes_count; pal++) {
     uint16_t clut = exported_palettes[pal];
     fprintf(stderr, "Loading the texture with %02x,%02x\n", clut & 0x3f, clut >> 6);
