@@ -277,21 +277,65 @@ polys_t load_faces(model_t* model, uint32_t object, uint32_t* num_quads_read, ui
   uint32_t face_offset = model->face_offsets[object];
   iso_seek_to_sector(model->iso, model->file_sector);
   iso_seek_forward(model->iso, face_offset);
-  iso_seek_forward(model->iso, 4);
-  uint32_t count;
+  uint32_t count = 0;
+
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
-  fprintf(stderr, "%u faces to read\n", count);
-  face_quad_t* quads = malloc(sizeof(face_quad_t) * count);
-  iso_fread(model->iso, quads, sizeof(face_quad_t), count);
-  *num_quads_read = count;
-  iso_seek_forward(model->iso, 4);
+  fprintf(stderr, "%u semi-transparent quads to read\n", count);
+  face_quad_t* semi_transparent_quads = malloc(sizeof(face_quad_t) * count);
+  iso_fread(model->iso, semi_transparent_quads, sizeof(face_quad_t), count);
+  uint32_t semi_transparent_quad_count = count;
+
   iso_fread(model->iso, &count, sizeof(uint32_t), 1);
-  face_tri_t* tris = malloc(sizeof(face_tri_t) * count);
-  iso_fread(model->iso, tris, sizeof(face_tri_t), count);
-  *num_tris_read = count;
+  fprintf(stderr, "%u opaque quads to read\n", count);
+  face_quad_t* opaque_quads = malloc(sizeof(face_quad_t) * count);
+  iso_fread(model->iso, opaque_quads, sizeof(face_quad_t), count);
+  uint32_t opaque_quad_count = count;
+
+  uint32_t quad_count = semi_transparent_quad_count + opaque_quad_count;
+  *num_quads_read = quad_count;
+
+  face_quad_t* all_quads = malloc(sizeof(face_quad_t) * quad_count);
+  memcpy(
+    all_quads,
+    semi_transparent_quads,
+    sizeof(face_quad_t) * semi_transparent_quad_count);
+  free(semi_transparent_quads);
+  memcpy(
+    &all_quads[semi_transparent_quad_count],
+    opaque_quads,
+    sizeof(face_quad_t) * opaque_quad_count);
+  free(opaque_quads);
+
+  iso_fread(model->iso, &count, sizeof(uint32_t), 1);
+  fprintf(stderr, "%u semi-transparent tris to read\n", count);
+  face_tri_t* semi_transparent_tris = malloc(sizeof(face_tri_t) * count);
+  iso_fread(model->iso, semi_transparent_tris, sizeof(face_tri_t), count);
+  uint32_t semi_transparent_tri_count = count;
+
+  iso_fread(model->iso, &count, sizeof(uint32_t), 1);
+  fprintf(stderr, "%u opaque tris to read\n", count);
+  face_tri_t* opaque_tris = malloc(sizeof(face_tri_t) * count);
+  iso_fread(model->iso, opaque_tris, sizeof(face_tri_t), count);
+  uint32_t opaque_tri_count = count;
+
+  uint32_t tri_count = semi_transparent_tri_count + opaque_tri_count;
+  *num_tris_read = tri_count;
+
+  face_tri_t* all_tris = malloc(sizeof(face_tri_t) * tri_count);
+  memcpy(
+    all_tris,
+    semi_transparent_tris,
+    sizeof(face_tri_t) * semi_transparent_tri_count);
+  free(semi_transparent_tris);
+  memcpy(
+    &all_tris[semi_transparent_tri_count],
+    opaque_tris,
+    sizeof(face_tri_t) * opaque_tri_count);
+  free(opaque_tris);
+
   return (polys_t) {
-    .quads = quads,
-    .tris = tris
+    .quads = all_quads,
+    .tris = all_tris
   };
 }
 
