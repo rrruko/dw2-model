@@ -84,8 +84,8 @@ int iso_fread(iso_t* iso, void* buf, size_t member_size, size_t items) {
     }
     result = fread(temp, margin, 1, iso->fp);
     temp += margin;
-    if (result != 1) {
-      fprintf(stderr, "failure reading margin\n");
+    if (result != 1 && result != 0) {
+      fprintf(stderr, "failure reading margin of size %ld\n", margin);
       return -1;
     }
     iso_seek_forward(iso, bytes_to_read);
