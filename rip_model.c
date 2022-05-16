@@ -192,6 +192,13 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
     expanded[8 * i + 5] = (color_upper & 0x03e0) >> 2;
     expanded[8 * i + 6] = (color_upper & 0x7c00) >> 7;
     expanded[8 * i + 7] = (color_upper == 0x0000) ? 0 : opacity;
+
+    if (semitransparent && color_lower == 0x8000) {
+      expanded[8 * i + 3] = 0;
+    }
+    if (semitransparent && color_upper == 0x8000) {
+      expanded[8 * i + 7] = 0;
+    }
   }
   return expanded;
 }
@@ -957,7 +964,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     .pbr_metallic_roughness = metallic_roughness,
     .double_sided = 0,
     .alpha_mode = cgltf_alpha_mode_mask,
-    .alpha_cutoff = 0.5
+    .alpha_cutoff = 0.1
   };
 
   cgltf_attribute attributes[2 * object_count];
