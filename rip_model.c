@@ -45,8 +45,8 @@ typedef struct face_quad_s {
   uint8_t tex_d_y;
   uint8_t palette;
   uint8_t clut;
-  uint8_t pad_1;
-  uint8_t pad_2;
+  uint8_t cmd_upper;
+  uint8_t cmd_lower;
 } face_quad_t;
 
 typedef struct face_tri_s {
@@ -64,8 +64,8 @@ typedef struct face_tri_s {
   uint8_t tex_c_y;
   uint8_t palette;
   uint8_t clut;
-  uint8_t pad_1;
-  uint8_t pad_2;
+  uint8_t cmd_upper;
+  uint8_t cmd_lower;
 } face_tri_t;
 
 typedef struct paletted_texture_s {
@@ -170,7 +170,7 @@ paletted_texture_t load_texture(model_t* model) {
 #define PNG_BUFFER_SIZE 5242880
 unsigned char png_buffer[PNG_BUFFER_SIZE];
 
-uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_t row) {
+uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_t row, int semitransparent) {
   uint32_t stride = 64;
   uint8_t* expanded = malloc(4 * 128 * 256);
   for (int i = 0; i < 16384; i++) {
@@ -182,14 +182,16 @@ uint8_t* expand_texture_paletted(paletted_texture_t* tex, uint8_t column, uint8_
     memcpy(&color_lower, &palette[2 * lower], sizeof(uint16_t));
     memcpy(&color_upper, &palette[2 * upper], sizeof(uint16_t));
 
+    uint8_t opacity = semitransparent ? 127 : 255;
+
     expanded[8 * i + 0] = (color_lower & 0x001f) << 3;
     expanded[8 * i + 1] = (color_lower & 0x03e0) >> 2;
     expanded[8 * i + 2] = (color_lower & 0x7c00) >> 7;
-    expanded[8 * i + 3] = (color_lower == 0x0000) ? 0 : 255;
+    expanded[8 * i + 3] = (color_lower == 0x0000) ? 0 : opacity;
     expanded[8 * i + 4] = (color_upper & 0x001f) << 3;
     expanded[8 * i + 5] = (color_upper & 0x03e0) >> 2;
     expanded[8 * i + 6] = (color_upper & 0x7c00) >> 7;
-    expanded[8 * i + 7] = (color_upper == 0x0000) ? 0 : 255;
+    expanded[8 * i + 7] = (color_upper == 0x0000) ? 0 : opacity;
   }
   return expanded;
 }
@@ -200,8 +202,8 @@ char* googa = "googa.png";
 // png. 1024x1024 pixels RGBA
 uint8_t png_write_buffer[4*1024*1024];
 
-void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t row, size_t offset_x, size_t offset_y) {
-  uint8_t* texture_expanded = expand_texture_paletted(tex, column, row);
+void blit_to_png_write_buffer(paletted_texture_t* tex, uint8_t column, uint8_t row, int semitransparent, size_t offset_x, size_t offset_y) {
+  uint8_t* texture_expanded = expand_texture_paletted(tex, column, row, semitransparent);
   for (int j = 0; j < 256; j++) {
     for (int i = 0; i < 128; i++) {
       size_t to_x = 4 * (offset_x + i);
@@ -954,8 +956,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     .has_pbr_metallic_roughness = 1,
     .pbr_metallic_roughness = metallic_roughness,
     .double_sided = 0,
-    .alpha_mode = cgltf_alpha_mode_mask,
-    .alpha_cutoff = 0.5
+    .alpha_mode = cgltf_alpha_mode_blend
   };
 
   cgltf_attribute attributes[2 * object_count];
@@ -1249,7 +1250,11 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
       face_quad_t* quads = polys.quads;
       uint8_t this_palette = quads[i].palette;
       uint8_t this_clut = quads[i].clut;
-      uint16_t pal_clut_packed = (this_clut << 8) | this_palette;
+      uint8_t this_cmd = quads[i].cmd_upper == 0 ? 0 : 0x80;
+      uint16_t pal_clut_packed =
+        (this_clut << 8) |
+        this_palette |
+        (this_cmd << 8);
       int palette_is_new = 1;
       int pal;
       for (pal = 0; pal < exported_palettes_count; pal++) {
@@ -1264,10 +1269,11 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
         }
         exported_palettes[exported_palettes_count++] = pal_clut_packed;
         fprintf(stderr,
-          "Encountered new palette %04x (y=%02x, x=%02x)\n",
+          "Encountered new palette %04x (y=%02x, x=%02x, t=%02x)\n",
           pal_clut_packed,
           pal_clut_packed >> 6,
-          pal_clut_packed & 0x3f);
+          pal_clut_packed & 0x3f,
+          (pal_clut_packed >> 8) & 0x80);
       }
 
       int tex_page_x = pal % 8;
@@ -1315,7 +1321,11 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
       face_tri_t* tris = polys.tris;
       uint8_t this_palette = tris[i].palette;
       uint8_t this_clut = tris[i].clut;
-      uint16_t pal_clut_packed = (this_clut << 8) | this_palette;
+      uint8_t this_cmd = tris[i].cmd_upper == 0 ? 0 : 0x80;
+      uint16_t pal_clut_packed =
+        (this_clut << 8) |
+        this_palette |
+        (this_cmd << 8);
       int palette_is_new = 1;
       int pal;
       for (pal = 0; pal < exported_palettes_count; pal++) {
@@ -1330,10 +1340,11 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
         }
         exported_palettes[exported_palettes_count++] = pal_clut_packed;
         fprintf(stderr,
-          "Encountered new palette %04x (y=%02x, x=%02x)\n",
+          "Encountered new palette %04x (y=%02x, x=%02x, t=%02x)\n",
           pal_clut_packed,
           pal_clut_packed >> 6,
-          pal_clut_packed & 0x3f);
+          pal_clut_packed & 0x3f,
+          (pal_clut_packed >> 8) & 0x80);
       }
 
       int tex_page_x = pal % 8;
@@ -1379,7 +1390,7 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
     fprintf(stderr, "Loading the texture with %02x,%02x\n", clut & 0x3f, clut >> 6);
     size_t offset_x = 128 * (pal % 8);
     size_t offset_y = 256 * (pal / 8);
-    blit_to_png_write_buffer(&tex, clut & 0x3f, clut >> 6, offset_x, offset_y);
+    blit_to_png_write_buffer(&tex, clut & 0x3f, clut >> 6, clut & 0x8000, offset_x, offset_y);
   }
   free(tex.texture);
   png_alloc_size_t png_alloc = save_png_write_buffer();
