@@ -956,7 +956,8 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     .has_pbr_metallic_roughness = 1,
     .pbr_metallic_roughness = metallic_roughness,
     .double_sided = 0,
-    .alpha_mode = cgltf_alpha_mode_blend
+    .alpha_mode = cgltf_alpha_mode_mask,
+    .alpha_cutoff = 0.5
   };
 
   cgltf_attribute attributes[2 * object_count];
