@@ -1,7 +1,35 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include "matrix.h"
+
+// Decompose M = SR into S (scale) and R (rotation)
+void decompose(fmatrix_t m, fmatrix_t* s_out, fmatrix_t* r_out) {
+  float scale_x = sqrt(m.x[0]*m.x[0] + m.x[3]*m.x[3] + m.x[6]*m.x[6]);
+  float scale_y = sqrt(m.x[1]*m.x[1] + m.x[4]*m.x[4] + m.x[7]*m.x[7]);
+  float scale_z = sqrt(m.x[2]*m.x[2] + m.x[5]*m.x[5] + m.x[8]*m.x[8]);
+
+  memset(s_out, 0, sizeof(fmatrix_t));
+  s_out->x[0] = scale_x;
+  s_out->x[4] = scale_y;
+  s_out->x[8] = scale_z;
+
+  float inv_scale_x = scale_x == 0 ? 1.0 : (1.0 / scale_x);
+  float inv_scale_y = scale_y == 0 ? 1.0 : (1.0 / scale_y);
+  float inv_scale_z = scale_z == 0 ? 1.0 : (1.0 / scale_z);
+
+  memcpy(r_out, &m, sizeof(fmatrix_t));
+  r_out->x[0] *= inv_scale_x;
+  r_out->x[1] *= inv_scale_y;
+  r_out->x[2] *= inv_scale_z;
+  r_out->x[3] *= inv_scale_x;
+  r_out->x[4] *= inv_scale_y;
+  r_out->x[5] *= inv_scale_z;
+  r_out->x[6] *= inv_scale_x;
+  r_out->x[7] *= inv_scale_y;
+  r_out->x[8] *= inv_scale_z;
+}
 
 vertex_t rotate(matrix_t m, vertex_t v) {
   return (vertex_t) {

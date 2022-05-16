@@ -26,3 +26,4 @@ quaternion_t matrix_to_quaternion(fmatrix_t m);
 void display_matrix_debug(matrix_t* m);
 void display_quaternion_debug(quaternion_t* q);
 void normalize_quaternion_inplace(quaternion_t* q);
+void decompose(fmatrix_t m, fmatrix_t* s_out, fmatrix_t* r_out);

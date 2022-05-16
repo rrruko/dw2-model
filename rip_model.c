@@ -430,7 +430,10 @@ void serialize_animation(animation_t* animation, uint32_t object_count, float** 
         die("fread failure, an error occured or EOF (rotation matrix)");
       }
       fmatrix_t fm = matrix_to_fmatrix(m);
-      quaternion_t q = matrix_to_quaternion(fm);
+      fmatrix_t rotate_matrix;
+      fmatrix_t scale_matrix;
+      decompose(fm, &scale_matrix, &rotate_matrix);
+      quaternion_t q = matrix_to_quaternion(rotate_matrix);
       normalize_quaternion_inplace(&q);
       //fprintf(stderr, "object %d/%d, keyframe %d/%d\n",
       //  object, object_count,
