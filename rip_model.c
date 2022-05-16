@@ -352,7 +352,13 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
   animation.iso = iso;
   animation.file_sector = sector;
   iso_seek_to_sector(iso, sector);
-  iso_seek_forward(iso, sizeof(uint32_t)); // Unused (always zero)?
+  uint32_t unused;
+  iso_fread(iso, &unused, sizeof(uint32_t), 1);
+  if (unused != 0) {
+    fprintf(stderr, "Expected the first word of animation to be 0,"
+      "but it was %x\n", unused);
+    exit(1);
+  }
   size_t items_read;
   animation.offsets = malloc(object_count * sizeof(uint32_t));
   items_read = iso_fread(
@@ -363,7 +369,22 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
   if (items_read != object_count) {
     die("fread failure, an error occured or EOF (animation offsets)");
   }
-  iso_seek_forward(iso, sizeof(uint32_t) * 2); // Don't know what these bytes mean
+
+  uint32_t obj_count;
+  iso_fread(iso, &obj_count, sizeof(uint32_t), 1);
+  uint32_t unused_1;
+  iso_fread(iso, &unused_1, sizeof(uint32_t), 1);
+
+  if (obj_count != 0xc + 4 * object_count) {
+    fprintf(stderr, "An unused word in the animation file had an unexpected"
+      "value: %x\n", obj_count);
+    exit(1);
+  }
+  if (unused_1 != 1) {
+    fprintf(stderr, "An unused word in the animation file was expected to be"
+      "1, but it was %x\n", unused_1);
+    exit(1);
+  }
 
   // Make space for 256 frames, should be enough, error if we run out
   animation.frame_table = malloc(object_count * 256);
