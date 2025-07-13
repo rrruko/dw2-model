@@ -769,27 +769,25 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       .buffer = &buffers[3],
       .offset = 0,
       .size = object_count * animation->frame_count * 4 * sizeof(float),
-      .stride = 16
     },
     {
       .name = "animation_translation_output_view",
       .buffer = &buffers[4],
       .offset = 0,
       .size = object_count * animation->frame_count * 3 * sizeof(float),
-      .stride = 12
     },
     {
       .name = "animation_scale_output_view",
       .buffer = &buffers[5],
       .offset = 0,
       .size = object_count * animation->frame_count * 3 * sizeof(float),
-      .stride = 12
     },
     {
       .name = "texcoord_view",
       .buffer = &buffers[6],
       .offset = 0,
-      .size = 4 * 2 * total_texcoords
+      .size = 4 * 2 * total_texcoords,
+      .stride = 8
     },
     {
       .name = "texture_view",
