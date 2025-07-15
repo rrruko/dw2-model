@@ -352,6 +352,7 @@ typedef struct animation_s {
   uint8_t** frame_tables;
   size_t animation_count;
   uint32_t* frame_counts;
+  size_t max_keyframe;
 } animation_t;
 
 void free_animation(animation_t* animation) {
@@ -369,6 +370,8 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
   animation.iso = iso;
   animation.file_sector = sector;
   animation.keyframe_offsets = NULL;
+  animation.frame_counts = malloc(256);
+  animation.max_keyframe = 0;
   iso_seek_to_sector(iso, sector);
   uint32_t unused;
   iso_fread(iso, &unused, sizeof(uint32_t), 1);
@@ -390,10 +393,13 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
 
   uint32_t keyframe_offset = 0;
   size_t animation_count = 0;
-  while (keyframe_offset != 1) {
+  while (1) {
     items_read = iso_fread(iso, &keyframe_offset, sizeof(uint32_t), 1);
     if (items_read != 1) {
       die("fread failure, an error occured or EOF (keyframe offsets)");
+    }
+    if (keyframe_offset == 1) {
+      break;
     }
     animation_count += 1;
     animation.keyframe_offsets = realloc(animation.keyframe_offsets, sizeof(uint32_t)*animation_count);
@@ -402,6 +408,7 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
 
   animation.frame_tables = malloc(sizeof(uint8_t*) * animation_count);
   for (int i = 0; i < animation_count; i++) {
+    fprintf(stderr, "Animation: %d\n", i);
     iso_seek_to_sector(animation.iso, animation.file_sector);
     iso_seek_forward(animation.iso, animation.keyframe_offsets[i]);
 
@@ -416,6 +423,14 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
         &animation.frame_tables[i][object_count * frame_count],
         sizeof(uint8_t),
         object_count);
+
+      // Update the max keyframe so that later we know how many transform
+      // matrices to read
+      for (int j = object_count * frame_count; j < (object_count + 1) * frame_count; j++) {
+        if (animation.frame_tables[i][j] > animation.max_keyframe) {
+          animation.max_keyframe = animation.frame_tables[i][j];
+        }
+      }
       if (items_read != object_count) {
         die("fread failure, an error occured or EOF (frame table)");
       }
@@ -433,23 +448,35 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
       }
     }
   }
+  fprintf(stderr, "Max keyframe: %d\n", animation.max_keyframe);
+  animation.animation_count = animation_count;
   return animation;
 }
 
 void serialize_animation(animation_t* animation, size_t animation_index, uint32_t object_count, float** rotation_out, float** translation_out, float** scale_out) {
-  size_t frame_count = animation->frame_counts[animation_index];
-  float* rotation = malloc(frame_count * 16 * object_count); // N quaternions, each quaternion is 4 floats, times object_count
-  float* translation = malloc(frame_count * 12 * object_count); // N translation vectors of 3 floats each, times object_count
-  float* scale = malloc(frame_count * 12 * object_count); // N scale vectors of 3 floats each, times object_count
+  size_t animation_frames_count = animation->frame_counts[animation_index];
+  size_t animation_max_keyframe = animation->max_keyframe;
+  float* rotation = malloc(animation_max_keyframe * 16 * object_count); // N quaternions, each quaternion is 4 floats, times object_count
+  float* translation = malloc(animation_max_keyframe * 12 * object_count); // N translation vectors of 3 floats each, times object_count
+  float* scale = malloc(animation_max_keyframe * 12 * object_count); // N scale vectors of 3 floats each, times object_count
   uint32_t object_start_rot = 0;
+  uint32_t object_start_dest_rot = 0;
   uint32_t object_start_trans = 0;
+  uint32_t object_start_dest_trans = 0;
   uint32_t object_start_scale = 0;
+  uint32_t object_start_dest_scale = 0;
   for (int object = 0; object < object_count; object++) {
     uint32_t offset = animation->transform_offsets[object];
     iso_seek_to_sector(animation->iso, animation->file_sector);
     iso_seek_forward(animation->iso, offset);
     matrix_t m;
-    for (int frame = 0; frame < frame_count; frame++) {
+    
+    // Read one matrix and one translation vector for each keyframe across all
+    // animations in the file. This actually reads more than it needs to because
+    // typically not all objects will have the same number of keyframes as
+    // animation.max_keyframe. So if we are near the end of the rom this code
+    // could error from reading further than it needs to.
+    for (int frame = 0; frame < animation_max_keyframe; frame++) {
       size_t items_read = iso_fread(
         animation->iso,
         &m,
@@ -471,7 +498,7 @@ void serialize_animation(animation_t* animation, size_t animation_index, uint32_
       normalize_quaternion_inplace(&q);
       fprintf(stderr, "object %d/%d, keyframe %d/%ld\n",
         object, object_count,
-        frame, frame_count);
+        frame, animation->max_keyframe);
       display_matrix_debug(&m);
       display_quaternion_debug(&q);
       vertex_t t = {0};
@@ -495,31 +522,34 @@ void serialize_animation(animation_t* animation, size_t animation_index, uint32_
       scale[object_start_scale + frame * 3 + 1] = scale_matrix.x[4];
       scale[object_start_scale + frame * 3 + 2] = scale_matrix.x[8];
     }
-    object_start_rot += frame_count * 4;
-    object_start_trans += frame_count * 3;
-    object_start_scale += frame_count * 3;
+    object_start_rot += animation_max_keyframe * 4;
+    object_start_trans += animation_max_keyframe * 3;
+    object_start_scale += animation_max_keyframe * 3;
   }
-  float* rotation_final = malloc(frame_count * 16 * object_count);
+  float* rotation_final = malloc(animation_frames_count * 16 * object_count);
   // TODO: 12, not 16?
-  float* translation_final = malloc(frame_count * 16 * object_count);
+  float* translation_final = malloc(animation_frames_count * 16 * object_count);
   // TODO: 12, not 16?
-  float* scale_final = malloc(frame_count * 16 * object_count);
+  float* scale_final = malloc(animation_frames_count * 16 * object_count);
   for (int object = 0; object < object_count; object++) {
-    object_start_rot = frame_count * 4 * object;
-    object_start_trans = frame_count * 3 * object;
-    object_start_scale = frame_count * 3 * object;
-    for (int frame = 0; frame < frame_count; frame++) {
+    object_start_rot = animation_max_keyframe * 4 * object;
+    object_start_dest_rot = animation_frames_count * 4 * object;
+    object_start_trans = animation_max_keyframe * 3 * object;
+    object_start_dest_trans = animation_frames_count * 3 * object;
+    object_start_scale = animation_max_keyframe * 3 * object;
+    object_start_dest_scale = animation_frames_count * 3 * object;
+    for (int frame = 0; frame < animation_frames_count; frame++) {
       uint8_t from = animation->frame_tables[animation_index][frame * object_count + object];
       memcpy(
-        &rotation_final[object_start_rot + frame * 4],
+        &rotation_final[object_start_dest_rot + frame * 4],
         &rotation[object_start_rot + from * 4],
         4 * sizeof(float));
       memcpy(
-        &translation_final[object_start_trans + frame * 3],
+        &translation_final[object_start_dest_trans + frame * 3],
         &translation[object_start_trans + from * 3],
         3 * sizeof(float));
       memcpy(
-        &scale_final[object_start_scale + frame * 3],
+        &scale_final[object_start_dest_scale + frame * 3],
         &scale[object_start_scale + from * 3],
         3 * sizeof(float));
     }
@@ -792,7 +822,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     size_t frame_count = animation->frame_counts[anim];
     buffer_views[2 + 4 * anim] = (cgltf_buffer_view)
       {
-        .name = "animation_rotation_input",
+        .name = "animation_input",
         .buffer = &buffers[2 + 4 * anim],
         .offset = 0,
         .size = frame_count * sizeof(float)
@@ -897,7 +927,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     size_t frame_count = animation->frame_counts[anim];
     for (int i = 0; i < object_count; i++) {
       accessors[2 * object_count + anim * object_count * 4 + 4 * i] = (cgltf_accessor) {
-        .name = "animation_rotation_input",
+        .name = "animation_input",
         .component_type = cgltf_component_type_r_32f,
         .normalized = 0,
         .type = cgltf_type_scalar,
@@ -955,7 +985,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       .offset = texcoord_offset,
       .count = texcoord_count[i],
       .stride = 8,
-      .buffer_view = &buffer_views[6]
+      .buffer_view = &buffer_views[2 + 4 * animation->animation_count]
     };
     texcoord_offset += 4 * 2 * texcoord_count[i];
   }
@@ -963,7 +993,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   cgltf_image images[1];
   images[0] = (cgltf_image) {
     .name = "texture_image",
-    .buffer_view = &buffer_views[7],
+    .buffer_view = &buffer_views[3 + 4 * animation->animation_count],
     .mime_type = "image/png"
   };
 
@@ -1131,9 +1161,9 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   for (int i = 0; i < animation->animation_count; i++) {
     animations[i] = (cgltf_animation) {
       .name = "animation",
-      .samplers = samplers + 3 * object_count * i,
+      .samplers = &samplers[3 * object_count * i],
       .samplers_count = 3 * object_count,
-      .channels = channels + 3 * object_count * i,
+      .channels = &channels[3 * object_count * i],
       .channels_count = 3 * object_count
     };
   }
