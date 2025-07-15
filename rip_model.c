@@ -424,13 +424,6 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
         sizeof(uint8_t),
         object_count);
 
-      // Update the max keyframe so that later we know how many transform
-      // matrices to read
-      for (int j = object_count * frame_count; j < (object_count + 1) * frame_count; j++) {
-        if (animation.frame_tables[i][j] > animation.max_keyframe) {
-          animation.max_keyframe = animation.frame_tables[i][j];
-        }
-      }
       if (items_read != object_count) {
         die("fread failure, an error occured or EOF (frame table)");
       }
@@ -441,6 +434,13 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
         fprintf(stderr, "Frame count: %d\n", frame_count);
         animation.frame_counts[i] = frame_count;
       } else {
+        // Update the max keyframe so that later we know how many transform
+        // matrices to read
+        for (int j = object_count * frame_count; j < (object_count + 1) * frame_count; j++) {
+          if (animation.frame_tables[i][j] > animation.max_keyframe) {
+            animation.max_keyframe = animation.frame_tables[i][j];
+          }
+        }
         frame_count++;
       }
       if (frame_count >= 256) {
@@ -455,7 +455,7 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
 
 void serialize_animation(animation_t* animation, size_t animation_index, uint32_t object_count, float** rotation_out, float** translation_out, float** scale_out) {
   size_t animation_frames_count = animation->frame_counts[animation_index];
-  size_t animation_max_keyframe = animation->max_keyframe;
+  size_t animation_max_keyframe = animation->max_keyframe + 1;
   float* rotation = malloc(animation_max_keyframe * 16 * object_count); // N quaternions, each quaternion is 4 floats, times object_count
   float* translation = malloc(animation_max_keyframe * 12 * object_count); // N translation vectors of 3 floats each, times object_count
   float* scale = malloc(animation_max_keyframe * 12 * object_count); // N scale vectors of 3 floats each, times object_count
@@ -498,7 +498,7 @@ void serialize_animation(animation_t* animation, size_t animation_index, uint32_
       normalize_quaternion_inplace(&q);
       fprintf(stderr, "object %d/%d, keyframe %d/%ld\n",
         object, object_count,
-        frame, animation->max_keyframe);
+        frame, animation_max_keyframe);
       display_matrix_debug(&m);
       display_quaternion_debug(&q);
       vertex_t t = {0};
