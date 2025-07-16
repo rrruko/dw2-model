@@ -353,6 +353,7 @@ typedef struct animation_s {
   size_t animation_count;
   uint32_t* frame_counts;
   size_t max_keyframe;
+  char animation_labels[8];
 } animation_t;
 
 void free_animation(animation_t* animation) {
@@ -393,10 +394,15 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
 
   uint32_t keyframe_offset = 0;
   size_t animation_count = 0;
+  char animation_label = '0';
   while (1) {
     items_read = iso_fread(iso, &keyframe_offset, sizeof(uint32_t), 1);
     if (items_read != 1) {
       die("fread failure, an error occured or EOF (keyframe offsets)");
+    }
+    animation_label++;
+    if (keyframe_offset == 0) {
+      continue;
     }
     if (keyframe_offset == 1) {
       break;
@@ -404,6 +410,7 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
     animation_count += 1;
     animation.keyframe_offsets = realloc(animation.keyframe_offsets, sizeof(uint32_t)*animation_count);
     animation.keyframe_offsets[animation_count - 1] = keyframe_offset;
+    animation.animation_labels[animation_count - 1] = animation_label;
   }
 
   animation.frame_tables = malloc(sizeof(uint8_t*) * animation_count);
@@ -470,7 +477,7 @@ void serialize_animation(animation_t* animation, size_t animation_index, uint32_
     iso_seek_to_sector(animation->iso, animation->file_sector);
     iso_seek_forward(animation->iso, offset);
     matrix_t m;
-    
+
     // Read one matrix and one translation vector for each keyframe across all
     // animations in the file. This actually reads more than it needs to because
     // typically not all objects will have the same number of keyframes as
@@ -682,7 +689,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, size_t* animation_labels, int32_t* node_tree, size_t object_count, size_t png_alloc) {
+void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, char* animation_labels, int32_t* node_tree, size_t object_count, size_t png_alloc) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -761,7 +768,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
           .size = frame_count * sizeof(float),
           .uri = animation_input_encoded,
         };
-    
+
       float* rotation_anim;
       float* translation_anim;
       float* scale_anim;
@@ -775,7 +782,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       char* scale_encoded = octet_stream_encode(scale_anim,
         object_count * frame_count * 3 * sizeof(float));
       free(scale_anim);
-  
+
       buffers[animation_counter * 4 + 3] = (cgltf_buffer)
         {
           .name = "animation_rotation_output",
@@ -962,7 +969,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
         accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i].min[0] = 0;
         accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i].max[0] =
           (frame_count - 1) * 0.0333333;
-    
+
         accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 1] = (cgltf_accessor) {
           .name = "animation_rotation_output",
           .component_type = cgltf_component_type_r_32f,
@@ -1109,13 +1116,13 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
           .output = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 1],
           .interpolation = cgltf_interpolation_type_step
         };
-    
+
         samplers[animation_counter * object_count * 3 + i * 3 + 1] = (cgltf_animation_sampler) {
           .input = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i],
           .output = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 2],
           .interpolation = cgltf_interpolation_type_step
         };
-    
+
         samplers[animation_counter * object_count * 3 + i * 3 + 2] = (cgltf_animation_sampler) {
           .input = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i],
           .output = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 3],
@@ -1195,7 +1202,13 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   for (int anim = 0; anim < animation_file_count; anim++) {
     for (int i = 0; i < animations[anim].animation_count; i++) {
       animation_names[animation_counter] = malloc(256);
-      int wrote = snprintf(animation_names[animation_counter], 256, "%lu:%d", animation_labels[anim], i);
+      int wrote = snprintf(
+          animation_names[animation_counter],
+          256,
+          "%c:%c",
+          animation_labels[anim],
+          animations[anim].animation_labels[i]
+      );
       if (wrote <= 0 || wrote >= 256) {
         die("snprintf error");
       }
@@ -1212,7 +1225,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       .channels_count = 3 * object_count
     };
   }
-   
+
   cgltf_scene scenes[1] = {
     {
       .name = "scene",
@@ -1282,7 +1295,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   }
 }
 
-void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_sectors, size_t* animation_labels, size_t animation_file_count) {
+void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_sectors, char* animation_labels, size_t animation_file_count) {
   struct stat st = {0};
   if (stat(name, &st) == -1) {
     mkdir(name, 0700);
@@ -1484,12 +1497,15 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_se
       float tex_offs_x = (float) tex_page_x / 8;
       float tex_offs_y = (float) tex_page_y / 4;
 
-      texcoords[6 * i + 0 + (12 * num_quads_read)] = tris[i].tex_a_x / 1024.0 + tex_offs_x;
-      texcoords[6 * i + 1 + (12 * num_quads_read)] = tris[i].tex_a_y / 1024.0 + tex_offs_y;
-      texcoords[6 * i + 2 + (12 * num_quads_read)] = tris[i].tex_c_x / 1024.0 + tex_offs_x;
-      texcoords[6 * i + 3 + (12 * num_quads_read)] = tris[i].tex_c_y / 1024.0 + tex_offs_y;
-      texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 1024.0 + tex_offs_x;
-      texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 1024.0 + tex_offs_y;
+      // Slightly adjust the UV coordinates to make sampling of texels
+      // more consistent
+      float e = 0.0001;
+      texcoords[6 * i + 0 + (12 * num_quads_read)] = tris[i].tex_a_x / 1024.0 + tex_offs_x + e;
+      texcoords[6 * i + 1 + (12 * num_quads_read)] = tris[i].tex_a_y / 1024.0 + tex_offs_y + e;
+      texcoords[6 * i + 2 + (12 * num_quads_read)] = tris[i].tex_c_x / 1024.0 + tex_offs_x + e;
+      texcoords[6 * i + 3 + (12 * num_quads_read)] = tris[i].tex_c_y / 1024.0 + tex_offs_y + e;
+      texcoords[6 * i + 4 + (12 * num_quads_read)] = tris[i].tex_b_x / 1024.0 + tex_offs_x + e;
+      texcoords[6 * i + 5 + (12 * num_quads_read)] = tris[i].tex_b_y / 1024.0 + tex_offs_y + e;
       size_t this_tri_offset = 18 * num_quads_read + 9 * i;
       flat_verts[this_tri_offset + 0] = -verts[tris[i].vertex_a].x / 4096.0;
       flat_verts[this_tri_offset + 1] = -verts[tris[i].vertex_a].y / 4096.0;
@@ -1585,7 +1601,7 @@ int main(int argc, char** argv) {
 
     char* pch;
     size_t anim_sectors[16];
-    size_t anim_labels[16];
+    char anim_labels[16];
     size_t anim_sector_count = 0;
     pch = strtok(line+14, " :");
     while (pch != NULL) {
@@ -1594,8 +1610,8 @@ int main(int argc, char** argv) {
       fprintf(stderr, "anim_sector: %05lx\n", anim_sectors[anim_sector_count]);
       pch = strtok(NULL, " :");
       fprintf(stderr, "pch: %s\n", pch);
-      anim_labels[anim_sector_count] = strtoul(pch, NULL, 10);
-      fprintf(stderr, "anim_label: %05lx\n", anim_labels[anim_sector_count]);
+      anim_labels[anim_sector_count] = *pch;
+      fprintf(stderr, "anim_label: %c\n", anim_labels[anim_sector_count]);
       pch = strtok(NULL, " :");
       fprintf(stderr, "pch: %s\n", pch);
       anim_sector_count++;
