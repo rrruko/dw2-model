@@ -448,7 +448,7 @@ animation_t load_animation(iso_t* iso, uint32_t sector, uint32_t object_count) {
       }
     }
   }
-  fprintf(stderr, "Max keyframe: %d\n", animation.max_keyframe);
+  fprintf(stderr, "Max keyframe: %ld\n", animation.max_keyframe);
   animation.animation_count = animation_count;
   return animation;
 }
@@ -497,8 +497,8 @@ void serialize_animation(animation_t* animation, size_t animation_index, uint32_
       quaternion_t q = matrix_to_quaternion(rotate_matrix);
       normalize_quaternion_inplace(&q);
       fprintf(stderr, "object %d/%d, keyframe %d/%ld\n",
-        object, object_count,
-        frame, animation_max_keyframe);
+        object + 1, object_count,
+        frame + 1, animation_max_keyframe);
       display_matrix_debug(&m);
       display_quaternion_debug(&q);
       vertex_t t = {0};
@@ -682,7 +682,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animation, int32_t* node_tree, size_t object_count, size_t png_alloc) {
+void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, int32_t* node_tree, size_t object_count, size_t png_alloc) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -726,7 +726,12 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
 
   char* png_encoded = octet_stream_encode(png_buffer, png_alloc);
 
-  cgltf_buffer buffers[4 * animation->animation_count + 4];
+  size_t total_animation_count = 0;
+  for (int i = 0; i < animation_file_count; i++) {
+    total_animation_count += animations[i].animation_count;
+  }
+
+  cgltf_buffer buffers[4 * total_animation_count + 4];
   buffers[0] = (cgltf_buffer) {
     .name = "vertex_buffer",
     .size = 4 * 3 * total_vertices,
@@ -739,67 +744,72 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     .uri = index_encoded
   };
 
+  size_t animation_counter = 0;
   // Create a buffer for each animation
-  for (size_t anim = 0; anim < animation->animation_count; anim++) {
-    size_t frame_count = animation->frame_counts[anim];
-    float animation_input[frame_count];
-    for (int i = 0; i < frame_count; i++) {
-      animation_input[i] = (float) (i * 0.0333333); // 30 FPS
-    }
-    char* animation_input_encoded = octet_stream_encode(animation_input, frame_count * sizeof(float));
-    buffers[4 * anim + 2] = (cgltf_buffer)
-      {
-        .name = "animation_input",
-        .size = frame_count * sizeof(float),
-        .uri = animation_input_encoded,
-      };
+  for (size_t animation_file = 0; animation_file < animation_file_count; animation_file++) {
+    animation_t* animation = &animations[animation_file];
+    for (size_t anim = 0; anim < animation->animation_count; anim++) {
+      size_t frame_count = animation->frame_counts[anim];
+      float animation_input[frame_count];
+      for (int i = 0; i < frame_count; i++) {
+        animation_input[i] = (float) (i * 0.0333333); // 30 FPS
+      }
+      char* animation_input_encoded = octet_stream_encode(animation_input, frame_count * sizeof(float));
+      buffers[animation_counter * 4 + 2] = (cgltf_buffer)
+        {
+          .name = "animation_input",
+          .size = frame_count * sizeof(float),
+          .uri = animation_input_encoded,
+        };
+    
+      float* rotation_anim;
+      float* translation_anim;
+      float* scale_anim;
+      serialize_animation(animation, anim, object_count, &rotation_anim, &translation_anim, &scale_anim);
+      char* rotation_encoded = octet_stream_encode(rotation_anim,
+        object_count * frame_count * 4 * sizeof(float));
+      free(rotation_anim);
+      char* translation_encoded = octet_stream_encode(translation_anim,
+        object_count * frame_count * 3 * sizeof(float));
+      free(translation_anim);
+      char* scale_encoded = octet_stream_encode(scale_anim,
+        object_count * frame_count * 3 * sizeof(float));
+      free(scale_anim);
   
-    float* rotation_anim;
-    float* translation_anim;
-    float* scale_anim;
-    serialize_animation(animation, anim, object_count, &rotation_anim, &translation_anim, &scale_anim);
-    char* rotation_encoded = octet_stream_encode(rotation_anim,
-      object_count * frame_count * 4 * sizeof(float));
-    free(rotation_anim);
-    char* translation_encoded = octet_stream_encode(translation_anim,
-      object_count * frame_count * 3 * sizeof(float));
-    free(translation_anim);
-    char* scale_encoded = octet_stream_encode(scale_anim,
-      object_count * frame_count * 3 * sizeof(float));
-    free(scale_anim);
-
-    buffers[4 * anim + 3] = (cgltf_buffer)
-      {
-        .name = "animation_rotation_output",
-        .size = object_count * frame_count * 4 * sizeof(float),
-        .uri = rotation_encoded,
-      };
-    buffers[4 * anim + 4] = (cgltf_buffer)
-      {
-        .name = "animation_translation_output",
-        .size = object_count * frame_count * 3 * sizeof(float),
-        .uri = translation_encoded
-      };
-    buffers[4 * anim + 5] = (cgltf_buffer)
-      {
-        .name = "animation_scale_output",
-        .size = object_count * frame_count * 3 * sizeof(float),
-        .uri = scale_encoded
-      };
+      buffers[animation_counter * 4 + 3] = (cgltf_buffer)
+        {
+          .name = "animation_rotation_output",
+          .size = object_count * frame_count * 4 * sizeof(float),
+          .uri = rotation_encoded,
+        };
+      buffers[animation_counter * 4 + 4] = (cgltf_buffer)
+        {
+          .name = "animation_translation_output",
+          .size = object_count * frame_count * 3 * sizeof(float),
+          .uri = translation_encoded
+        };
+      buffers[animation_counter * 4 + 5] = (cgltf_buffer)
+        {
+          .name = "animation_scale_output",
+          .size = object_count * frame_count * 3 * sizeof(float),
+          .uri = scale_encoded
+        };
+      animation_counter++;
+    }
   }
-  buffers[4 * animation->animation_count + 2] = (cgltf_buffer)
+  buffers[total_animation_count * 4 + 2] = (cgltf_buffer)
     {
       .name = "texcoord",
       .size = 4 * 2 * total_texcoords,
       .uri = texcoord_encoded
     };
-  buffers[4 * animation->animation_count + 3] = (cgltf_buffer)
+  buffers[total_animation_count * 4 + 3] = (cgltf_buffer)
     {
       .name = "texture_buffer",
       .size = png_alloc,
       .uri = png_encoded
     };
-  cgltf_buffer_view buffer_views[4 * animation->animation_count + 4];
+  cgltf_buffer_view buffer_views[4 * total_animation_count + 4];
   buffer_views[0] = (cgltf_buffer_view)
     {
       .name = "vertex_buffer_view",
@@ -818,53 +828,60 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       //.stride = 0,
       .type = cgltf_buffer_view_type_indices
     };
-  for (int anim = 0; anim < animation->animation_count; anim++) {
-    size_t frame_count = animation->frame_counts[anim];
-    buffer_views[2 + 4 * anim] = (cgltf_buffer_view)
-      {
-        .name = "animation_input",
-        .buffer = &buffers[2 + 4 * anim],
-        .offset = 0,
-        .size = frame_count * sizeof(float)
-      };
-    buffer_views[3 + 4 * anim] = (cgltf_buffer_view)
-      {
-        .name = "animation_rotation_output_view",
-        .buffer = &buffers[3 + 4 * anim],
-        .offset = 0,
-        .size = object_count * frame_count * 4 * sizeof(float),
-      };
-    buffer_views[4 + 4 * anim] = (cgltf_buffer_view)
-      {
-        .name = "animation_translation_output_view",
-        .buffer = &buffers[4 + 4 * anim],
-        .offset = 0,
-        .size = object_count * frame_count * 3 * sizeof(float),
-      };
-    buffer_views[5 + 4 * anim] = (cgltf_buffer_view)
-      {
-        .name = "animation_scale_output_view",
-        .buffer = &buffers[5 + 4 * anim],
-        .offset = 0,
-        .size = object_count * frame_count * 3 * sizeof(float),
-      };
+
+  animation_counter = 0;
+  // Create a buffer for each animation
+  for (size_t animation_file = 0; animation_file < animation_file_count; animation_file++) {
+    animation_t* animation = &animations[animation_file];
+    for (int anim = 0; anim < animation->animation_count; anim++) {
+      size_t frame_count = animation->frame_counts[anim];
+      buffer_views[animation_counter * 4 + 2] = (cgltf_buffer_view)
+        {
+          .name = "animation_input",
+          .buffer = &buffers[animation_counter * 4 + 2],
+          .offset = 0,
+          .size = frame_count * sizeof(float)
+        };
+      buffer_views[animation_counter * 4 + 3] = (cgltf_buffer_view)
+        {
+          .name = "animation_rotation_output_view",
+          .buffer = &buffers[animation_counter * 4 + 3],
+          .offset = 0,
+          .size = object_count * frame_count * 4 * sizeof(float),
+        };
+      buffer_views[animation_counter * 4 + 4] = (cgltf_buffer_view)
+        {
+          .name = "animation_translation_output_view",
+          .buffer = &buffers[animation_counter * 4 + 4],
+          .offset = 0,
+          .size = object_count * frame_count * 3 * sizeof(float),
+        };
+      buffer_views[animation_counter * 4 + 5] = (cgltf_buffer_view)
+        {
+          .name = "animation_scale_output_view",
+          .buffer = &buffers[animation_counter * 4 + 5],
+          .offset = 0,
+          .size = object_count * frame_count * 3 * sizeof(float),
+        };
+      animation_counter++;
+    }
   }
-  buffer_views[2 + 4 * animation->animation_count] = (cgltf_buffer_view)
+  buffer_views[total_animation_count * 4 + 2] = (cgltf_buffer_view)
     {
       .name = "texcoord_view",
-      .buffer = &buffers[2 + 4 * animation->animation_count],
+      .buffer = &buffers[total_animation_count * 4 + 2],
       .offset = 0,
       .size = 4 * 2 * total_texcoords,
       .stride = 8
     };
-  buffer_views[3 + 4 * animation->animation_count] = (cgltf_buffer_view)
+  buffer_views[total_animation_count * 4 + 3] = (cgltf_buffer_view)
     {
       .name = "texture_view",
-      .buffer = &buffers[3 + 4 * animation->animation_count],
+      .buffer = &buffers[total_animation_count * 4 + 3],
       .offset = 0,
       .size = png_alloc
     };
-  cgltf_accessor accessors[4 * object_count * animation->animation_count + 3 * object_count];
+  cgltf_accessor accessors[4 * object_count * total_animation_count + 3 * object_count];
   size_t object_vertex_offset = 0;
   for (int i = 0; i < object_count; i++) {
     accessors[i] = (cgltf_accessor) {
@@ -923,61 +940,69 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     accessor_offset += 4 * 3 * triangle_count[i];
   }
 
-  for (int anim = 0; anim < animation->animation_count; anim++) {
-    size_t frame_count = animation->frame_counts[anim];
-    for (int i = 0; i < object_count; i++) {
-      accessors[2 * object_count + anim * object_count * 4 + 4 * i] = (cgltf_accessor) {
-        .name = "animation_input",
-        .component_type = cgltf_component_type_r_32f,
-        .normalized = 0,
-        .type = cgltf_type_scalar,
-        .offset = 0,
-        .count = frame_count,
-        .stride = 4,
-        .buffer_view = &buffer_views[2 + 4 * anim],
-        .has_min = 1,
-        .has_max = 1
-      };
-      accessors[2 * object_count + anim * object_count * 4 + 4 * i].min[0] = 0;
-      accessors[2 * object_count + anim * object_count * 4 + 4 * i].max[0] =
-        (frame_count - 1) * 0.0333333;
+  animation_counter = 0;
+  // Create a buffer for each animation
+  for (size_t animation_file = 0; animation_file < animation_file_count; animation_file++) {
+    animation_t* animation = &animations[animation_file];
+    for (int anim = 0; anim < animation->animation_count; anim++) {
+      size_t frame_count = animation->frame_counts[anim];
+      for (int i = 0; i < object_count; i++) {
+        accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i] = (cgltf_accessor) {
+          .name = "animation_input",
+          .component_type = cgltf_component_type_r_32f,
+          .normalized = 0,
+          .type = cgltf_type_scalar,
+          .offset = 0,
+          .count = frame_count,
+          .stride = 4,
+          .buffer_view = &buffer_views[animation_counter * 4 + 2],
+          .has_min = 1,
+          .has_max = 1
+        };
+        accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i].min[0] = 0;
+        accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i].max[0] =
+          (frame_count - 1) * 0.0333333;
+    
+        accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 1] = (cgltf_accessor) {
+          .name = "animation_rotation_output",
+          .component_type = cgltf_component_type_r_32f,
+          .normalized = 0,
+          .type = cgltf_type_vec4,
+          .offset = frame_count * 16 * i,
+          .count = frame_count,
+          .stride = 16,
+          .buffer_view = &buffer_views[animation_counter * 4 + 3]
+        };
 
-      accessors[2 * object_count + anim * object_count * 4 + 4 * i + 1] = (cgltf_accessor) {
-        .name = "animation_rotation_output",
-        .component_type = cgltf_component_type_r_32f,
-        .normalized = 0,
-        .type = cgltf_type_vec4,
-        .offset = frame_count * 16 * i,
-        .count = frame_count,
-        .stride = 16,
-        .buffer_view = &buffer_views[3 + 4 * anim]
-      };
-      accessors[2 * object_count + anim * object_count * 4 + 4 * i + 2] = (cgltf_accessor) {
-        .name = "animation_translation_output",
-        .component_type = cgltf_component_type_r_32f,
-        .normalized = 0,
-        .type = cgltf_type_vec3,
-        .offset = frame_count * 12 * i,
-        .count = frame_count,
-        .stride = 12,
-        .buffer_view = &buffer_views[4 + 4 * anim]
-      };
-      accessors[2 * object_count + anim * object_count * 4 + 4 * i + 3] = (cgltf_accessor) {
-        .name = "animation_scale_output",
-        .component_type = cgltf_component_type_r_32f,
-        .normalized = 0,
-        .type = cgltf_type_vec3,
-        .offset = frame_count * 12 * i,
-        .count = frame_count,
-        .stride = 12,
-        .buffer_view = &buffer_views[5 + 4 * anim]
-      };
+        accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 2] = (cgltf_accessor) {
+          .name = "animation_translation_output",
+          .component_type = cgltf_component_type_r_32f,
+          .normalized = 0,
+          .type = cgltf_type_vec3,
+          .offset = frame_count * 12 * i,
+          .count = frame_count,
+          .stride = 12,
+          .buffer_view = &buffer_views[animation_counter * 4 + 4]
+        };
+
+        accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 3] = (cgltf_accessor) {
+          .name = "animation_scale_output",
+          .component_type = cgltf_component_type_r_32f,
+          .normalized = 0,
+          .type = cgltf_type_vec3,
+          .offset = frame_count * 12 * i,
+          .count = frame_count,
+          .stride = 12,
+          .buffer_view = &buffer_views[animation_counter * 4 + 5]
+        };
+      }
+      animation_counter++;
     }
   }
 
   size_t texcoord_offset = 0;
   for (int i = 0; i < object_count; i++) {
-    accessors[2 * object_count + animation->animation_count * object_count * 4 + i] = (cgltf_accessor) {
+    accessors[2 * object_count + total_animation_count * object_count * 4 + i] = (cgltf_accessor) {
       .name = "texcoord",
       .component_type = cgltf_component_type_r_32f,
       .normalized = 0,
@@ -985,7 +1010,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       .offset = texcoord_offset,
       .count = texcoord_count[i],
       .stride = 8,
-      .buffer_view = &buffer_views[2 + 4 * animation->animation_count]
+      .buffer_view = &buffer_views[2 + 4 * total_animation_count]
     };
     texcoord_offset += 4 * 2 * texcoord_count[i];
   }
@@ -993,7 +1018,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   cgltf_image images[1];
   images[0] = (cgltf_image) {
     .name = "texture_image",
-    .buffer_view = &buffer_views[3 + 4 * animation->animation_count],
+    .buffer_view = &buffer_views[3 + 4 * total_animation_count],
     .mime_type = "image/png"
   };
 
@@ -1049,7 +1074,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       .name = "TEXCOORD_0",
       .type = cgltf_attribute_type_texcoord,
       .index = 0,
-      .data = &accessors[2 * object_count + 4 * animation->animation_count * object_count + i]
+      .data = &accessors[2 * object_count + 4 * total_animation_count * object_count + i]
     };
   }
 
@@ -1072,26 +1097,32 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     };
   }
 
-  cgltf_animation_sampler samplers[animation->animation_count * object_count * 3];
-  for (int anim = 0; anim < animation->animation_count; anim++) {
-    for (int i = 0; i < object_count; i++) {
-      samplers[anim * object_count * 3 + i * 3] = (cgltf_animation_sampler) {
-        .input = &accessors[2 * object_count + anim * object_count * 4 + 4 * i],
-        .output = &accessors[2 * object_count + anim * object_count * 4 + 4 * i + 1],
-        .interpolation = cgltf_interpolation_type_step
-      };
-  
-      samplers[anim * object_count * 3 + i * 3 + 1] = (cgltf_animation_sampler) {
-        .input = &accessors[2 * object_count + anim * object_count * 4 + 4 * i],
-        .output = &accessors[2 * object_count + anim * object_count * 4 + 4 * i + 2],
-        .interpolation = cgltf_interpolation_type_step
-      };
-  
-      samplers[anim * object_count * 3 + i * 3 + 2] = (cgltf_animation_sampler) {
-        .input = &accessors[2 * object_count + anim * object_count * 4 + 4 * i],
-        .output = &accessors[2 * object_count + anim * object_count * 4 + 4 * i + 3],
-        .interpolation = cgltf_interpolation_type_step
-      };
+  cgltf_animation_sampler samplers[total_animation_count * object_count * 3];
+
+  animation_counter = 0;
+  for (size_t animation_file = 0; animation_file < animation_file_count; animation_file++) {
+    animation_t* animation = &animations[animation_file];
+    for (int anim = 0; anim < animation->animation_count; anim++) {
+      for (int i = 0; i < object_count; i++) {
+        samplers[animation_counter * object_count * 3 + i * 3] = (cgltf_animation_sampler) {
+          .input = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i],
+          .output = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 1],
+          .interpolation = cgltf_interpolation_type_step
+        };
+    
+        samplers[animation_counter * object_count * 3 + i * 3 + 1] = (cgltf_animation_sampler) {
+          .input = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i],
+          .output = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 2],
+          .interpolation = cgltf_interpolation_type_step
+        };
+    
+        samplers[animation_counter * object_count * 3 + i * 3 + 2] = (cgltf_animation_sampler) {
+          .input = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i],
+          .output = &accessors[2 * object_count + animation_counter * object_count * 4 + 4 * i + 3],
+          .interpolation = cgltf_interpolation_type_step
+        };
+      }
+      animation_counter++;
     }
   }
 
@@ -1136,30 +1167,32 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     }
   }
 
-  cgltf_animation_channel channels[animation->animation_count * object_count * 3];
-  for (int anim = 0; anim < animation->animation_count; anim++) {
+  animation_counter = 0;
+  cgltf_animation_channel channels[total_animation_count * object_count * 3];
+  for (int anim = 0; anim < total_animation_count; anim++) {
     for (int i = 0; i < object_count; i++) {
-      channels[anim * object_count * 3 + 3 * i + 0] = (cgltf_animation_channel) {
-        .sampler = &samplers[anim * object_count * 3 + 3 * i + 0],
+      channels[animation_counter * object_count * 3 + 3 * i + 0] = (cgltf_animation_channel) {
+        .sampler = &samplers[animation_counter * object_count * 3 + 3 * i + 0],
         .target_node = &nodes[i],
         .target_path = cgltf_animation_path_type_rotation
       };
-      channels[anim * object_count * 3 + 3 * i + 1] = (cgltf_animation_channel) {
-        .sampler = &samplers[anim * object_count * 3 + 3 * i + 1],
+      channels[animation_counter * object_count * 3 + 3 * i + 1] = (cgltf_animation_channel) {
+        .sampler = &samplers[animation_counter * object_count * 3 + 3 * i + 1],
         .target_node = &nodes[i],
         .target_path = cgltf_animation_path_type_translation
       };
-      channels[anim * object_count * 3 + 3 * i + 2] = (cgltf_animation_channel) {
-        .sampler = &samplers[anim * object_count * 3 + 3 * i + 2],
+      channels[animation_counter * object_count * 3 + 3 * i + 2] = (cgltf_animation_channel) {
+        .sampler = &samplers[animation_counter * object_count * 3 + 3 * i + 2],
         .target_node = &nodes[i],
         .target_path = cgltf_animation_path_type_scale
       };
     }
+    animation_counter++;
   }
 
-  cgltf_animation animations[animation->animation_count];
-  for (int i = 0; i < animation->animation_count; i++) {
-    animations[i] = (cgltf_animation) {
+  cgltf_animation gltf_animations[total_animation_count];
+  for (int i = 0; i < total_animation_count; i++) {
+    gltf_animations[i] = (cgltf_animation) {
       .name = "animation",
       .samplers = &samplers[3 * object_count * i],
       .samplers_count = 3 * object_count,
@@ -1180,17 +1213,17 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   data.meshes = meshes;
   data.meshes_count = object_count;
 
-  data.animations = animations;
-  data.animations_count = animation->animation_count;
+  data.animations = gltf_animations;
+  data.animations_count = total_animation_count;
 
   data.accessors = accessors;
-  data.accessors_count = 4 * object_count * animation->animation_count + 3 * object_count;
+  data.accessors_count = 4 * object_count * total_animation_count + 3 * object_count;
 
   data.buffer_views = buffer_views;
-  data.buffer_views_count = 4 * animation->animation_count + 4;
+  data.buffer_views_count = 4 * total_animation_count + 4;
 
   data.buffers = buffers;
-  data.buffers_count = 4 * animation->animation_count + 4;
+  data.buffers_count = 4 * total_animation_count + 4;
 
   data.materials = materials;
   data.materials_count = 1;
@@ -1237,7 +1270,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   }
 }
 
-void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sector) {
+void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_sectors, size_t animation_file_count) {
   struct stat st = {0};
   if (stat(name, &st) == -1) {
     mkdir(name, 0700);
@@ -1247,17 +1280,22 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
   model_t new_model;
   new_model = load_model(iso, model_sector);
 
-  animation_t animation;
-  animation = load_animation(iso, animation_sector, new_model.object_count);
+  animation_t animation[animation_file_count];
+  for (int i = 0; i < animation_file_count; i++) {
+    animation[i] = load_animation(iso, animation_sectors[i], new_model.object_count);
+  }
 
-  for (int anim = 0; anim < animation.animation_count; anim++) {
-    fprintf(stderr, "Frame table:\n");
-    for (int frame = 0; frame < animation.frame_counts[anim]; frame++) {
-      for (int object = 0; object < new_model.object_count; object++) {
-        fprintf(stderr, "%02d ",
-          animation.frame_tables[anim][frame * new_model.object_count + object]);
+  for (int animation_file = 0; animation_file < animation_file_count; animation_file++) {
+    fprintf(stderr, "Animation file %d\n", animation_file);
+    for (int anim = 0; anim < animation[animation_file].animation_count; anim++) {
+      fprintf(stderr, "Frame table:\n");
+      for (int frame = 0; frame < animation[animation_file].frame_counts[anim]; frame++) {
+        for (int object = 0; object < new_model.object_count; object++) {
+          fprintf(stderr, "%02d ",
+            animation[animation_file].frame_tables[anim][frame * new_model.object_count + object]);
+        }
+        fprintf(stderr, "\n");
       }
-      fprintf(stderr, "\n");
     }
   }
 
@@ -1305,13 +1343,13 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
   for (int j = 0; j < new_model.object_count; j++) {
     uint32_t num_read;
     vertex_t* verts;
-    fprintf(stderr, "loading verts (%d/%d)\n", j, new_model.object_count);
+    fprintf(stderr, "loading verts (%d/%d)\n", j + 1, new_model.object_count);
     verts = load_vertices(&new_model, j, &num_read);
     fprintf(stderr, "loaded %d verts\n", num_read);
     uint32_t num_quads_read;
     uint32_t num_tris_read;
     polys_t polys;
-    fprintf(stderr, "loading faces (%d/%d)\n", j, new_model.object_count);
+    fprintf(stderr, "loading faces (%d/%d)\n", j + 1, new_model.object_count);
     polys = load_faces(&new_model, j, &num_quads_read, &num_tris_read);
     fprintf(stderr, "loaded %d faces\n", num_quads_read*2 + num_tris_read);
     uint32_t* flat_tris = calloc(
@@ -1484,7 +1522,8 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
     flat_tri_counts,
     texcoord_table,
     texcoord_counts,
-    &animation,
+    animation,
+    animation_file_count,
     new_model.node_tree,
     new_model.object_count,
     png_alloc
@@ -1501,7 +1540,9 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t animation_sec
     free(texcoord_table[i]);
   }
 
-  free_animation(&animation);
+  for (int i = 0; i < animation_file_count; i++) {
+    free_animation(&animation[i]);
+  }
 }
 
 int main(int argc, char** argv) {
@@ -1528,15 +1569,25 @@ int main(int argc, char** argv) {
   size_t read = 0;
   while ((read = getline(&line, &len, model_table_fp)) != -1) {
     size_t model_sector = strtoul(line+8, NULL, 16);
-    size_t anim_sector = strtoul(line+14, NULL, 16);
+
+    char* pch;
+    size_t anim_sectors[16];
+    size_t anim_sector_count = 0;
+    pch = strtok(line+14, " ");
+    while (pch != NULL) {
+      anim_sectors[anim_sector_count++] = strtoul(pch, NULL, 16);
+      pch = strtok(NULL, " ");
+    }
+
     char name[8];
     memcpy(name, line, 7);
     name[7] = 0;
-    fprintf(stderr, "File name %s sector numbers: (%lu, %lu)\n",
-      name,
-      model_sector,
-      anim_sector);
-    rip_model(&iso, name, model_sector, anim_sector);
+    fprintf(stderr, "File name %s sector numbers: %05lx;", name, model_sector);
+    for (int i = 0; i < anim_sector_count; i++) {
+      fprintf(stderr, " %05lx", anim_sectors[i]);
+    }
+    fprintf(stderr, "\n");
+    rip_model(&iso, name, model_sector, anim_sectors, anim_sector_count);
     free(line);
     line = NULL;
   }

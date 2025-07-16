@@ -110,9 +110,9 @@ quaternion_t matrix_to_quaternion(fmatrix_t m) {
 }
 
 void display_matrix_debug(matrix_t* m) {
-  fprintf(stderr, "m = | %04d %04d %04d |\n", m->x[0], m->x[1], m->x[2]);
-  fprintf(stderr, "    | %04d %04d %04d |\n", m->x[3], m->x[4], m->x[5]);
-  fprintf(stderr, "    | %04d %04d %04d |\n", m->x[6], m->x[7], m->x[8]);
+  fprintf(stderr, "m = | %05d %05d %05d |\n", m->x[0], m->x[1], m->x[2]);
+  fprintf(stderr, "    | %05d %05d %05d |\n", m->x[3], m->x[4], m->x[5]);
+  fprintf(stderr, "    | %05d %05d %05d |\n", m->x[6], m->x[7], m->x[8]);
 }
 
 void display_quaternion_debug(quaternion_t* q) {
