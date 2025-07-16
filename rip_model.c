@@ -682,7 +682,7 @@ model_t load_model(iso_t* iso, uint32_t sector) {
   return new_model;
 }
 
-void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, int32_t* node_tree, size_t object_count, size_t png_alloc) {
+void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, size_t* animation_labels, int32_t* node_tree, size_t object_count, size_t png_alloc) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -1190,10 +1190,22 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     animation_counter++;
   }
 
+  animation_counter = 0;
+  char* animation_names[total_animation_count];
+  for (int anim = 0; anim < animation_file_count; anim++) {
+    for (int i = 0; i < animations[anim].animation_count; i++) {
+      animation_names[animation_counter] = malloc(256);
+      int wrote = snprintf(animation_names[animation_counter], 256, "%lu:%d", animation_labels[anim], i);
+      if (wrote <= 0 || wrote >= 256) {
+        die("snprintf error");
+      }
+      animation_counter++;
+    }
+  }
   cgltf_animation gltf_animations[total_animation_count];
   for (int i = 0; i < total_animation_count; i++) {
     gltf_animations[i] = (cgltf_animation) {
-      .name = "animation",
+      .name = animation_names[i],
       .samplers = &samplers[3 * object_count * i],
       .samplers_count = 3 * object_count,
       .channels = &channels[3 * object_count * i],
@@ -1270,7 +1282,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   }
 }
 
-void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_sectors, size_t animation_file_count) {
+void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_sectors, size_t* animation_labels, size_t animation_file_count) {
   struct stat st = {0};
   if (stat(name, &st) == -1) {
     mkdir(name, 0700);
@@ -1524,6 +1536,7 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_se
     texcoord_counts,
     animation,
     animation_file_count,
+    animation_labels,
     new_model.node_tree,
     new_model.object_count,
     png_alloc
@@ -1572,11 +1585,20 @@ int main(int argc, char** argv) {
 
     char* pch;
     size_t anim_sectors[16];
+    size_t anim_labels[16];
     size_t anim_sector_count = 0;
-    pch = strtok(line+14, " ");
+    pch = strtok(line+14, " :");
     while (pch != NULL) {
-      anim_sectors[anim_sector_count++] = strtoul(pch, NULL, 16);
-      pch = strtok(NULL, " ");
+      fprintf(stderr, "pch: %s\n", pch);
+      anim_sectors[anim_sector_count] = strtoul(pch, NULL, 16);
+      fprintf(stderr, "anim_sector: %05lx\n", anim_sectors[anim_sector_count]);
+      pch = strtok(NULL, " :");
+      fprintf(stderr, "pch: %s\n", pch);
+      anim_labels[anim_sector_count] = strtoul(pch, NULL, 10);
+      fprintf(stderr, "anim_label: %05lx\n", anim_labels[anim_sector_count]);
+      pch = strtok(NULL, " :");
+      fprintf(stderr, "pch: %s\n", pch);
+      anim_sector_count++;
     }
 
     char name[8];
@@ -1587,7 +1609,7 @@ int main(int argc, char** argv) {
       fprintf(stderr, " %05lx", anim_sectors[i]);
     }
     fprintf(stderr, "\n");
-    rip_model(&iso, name, model_sector, anim_sectors, anim_sector_count);
+    rip_model(&iso, name, model_sector, anim_sectors, anim_labels, anim_sector_count);
     free(line);
     line = NULL;
   }
