@@ -14,6 +14,19 @@
 #define CGLTF_WRITE_IMPLEMENTATION
 #include "cgltf_write.h"
 
+typedef struct blink_s {
+  uint8_t start_x;
+  uint8_t start_y;
+  uint8_t extent_x;
+  uint8_t extent_y;
+  uint8_t eye_0_x;
+  uint8_t eye_0_y;
+  uint8_t eye_1_x;
+  uint8_t eye_1_y;
+  uint8_t eye_2_x;
+  uint8_t eye_2_y;
+} blink_t;
+
 typedef struct model_s {
   iso_t* iso;
   uint32_t file_sector;
@@ -24,6 +37,8 @@ typedef struct model_s {
   uint32_t* vertex_offsets;
   uint32_t* normal_offsets;
   uint32_t* face_offsets;
+  blink_t blink[3];
+  size_t blink_count;
 } model_t;
 
 typedef struct face_quad_s {
@@ -617,10 +632,95 @@ vertex_t transform_vertex(vertex_t v, model_t* model, animation_t* animation, ui
   }
 }
 
+void read_blink(iso_t* iso, blink_t* blink) {
+  size_t items_read;
+  items_read = iso_fread(
+    iso,
+    &blink->start_x,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->start_y,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->extent_x,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->extent_y,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->eye_0_x,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->eye_0_y,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->eye_1_x,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->eye_1_y,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->eye_2_x,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+  items_read = iso_fread(
+    iso,
+    &blink->eye_2_y,
+    sizeof(uint8_t),
+    1);
+  if (items_read != 1) {
+    die("read_blink: iso_fread error");
+  }
+}
+
 model_t load_model(iso_t* iso, uint32_t sector) {
   model_t new_model;
   new_model.iso = iso;
   new_model.file_sector = sector;
+  new_model.blink_count = 0;
   iso_seek_to_sector(iso, sector);
   size_t items_read;
   items_read = iso_fread(iso, &new_model.texture_sheet_offset, sizeof(uint32_t), 1);
@@ -686,10 +786,21 @@ model_t load_model(iso_t* iso, uint32_t sector) {
       }
     }
   }
+
+  for (int i = 0; 1; i++) {
+    read_blink(iso, &new_model.blink[i]);
+    fprintf(stderr, "start_x: %d\n", new_model.blink[i].start_x);
+    if (new_model.blink[i].start_x == 0xfe ||
+        new_model.blink[i].start_x == 0xff) {
+      break;
+    }
+    new_model.blink_count++;
+  }
+
   return new_model;
 }
 
-void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, char* animation_labels, int32_t* node_tree, size_t object_count, size_t png_alloc) {
+void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_count, uint32_t** tri_indices, size_t* triangle_count, float** texcoords, size_t* texcoord_count, animation_t* animations, size_t animation_file_count, char* animation_labels, int32_t* node_tree, size_t object_count, size_t png_alloc, blink_t* blinks, size_t blink_count) {
   size_t total_vertices = 0;
   for (int i = 0; i < object_count; i++) {
     total_vertices += vertex_count[i];
@@ -724,14 +835,18 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
   }
 
   char* vertex_encoded = octet_stream_encode(all_vertices, 4 * 3 * total_vertices);
+  fprintf(stderr, "vertex encoded buffer size: %d\n", 4 * 3 * total_vertices);
   free(all_vertices);
   char* index_encoded = octet_stream_encode(all_triangles, 4 * 3 * total_triangles);
+  fprintf(stderr, "index encoded buffer size: %d\n", 4 * 3 * total_triangles);
   free(all_triangles);
 
   char* texcoord_encoded = octet_stream_encode(all_texcoords, 4 * 2 * total_texcoords);
+  fprintf(stderr, "texcoord encoded buffer size: %d\n", 4 * 2 * total_texcoords);
   free(all_texcoords);
 
   char* png_encoded = octet_stream_encode(png_buffer, png_alloc);
+  fprintf(stderr, "texture png encoded buffer size: %d\n", png_alloc);
 
   size_t total_animation_count = 0;
   for (int i = 0; i < animation_file_count; i++) {
@@ -762,6 +877,7 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
         animation_input[i] = (float) (i * 0.0333333); // 30 FPS
       }
       char* animation_input_encoded = octet_stream_encode(animation_input, frame_count * sizeof(float));
+      fprintf(stderr, "animation input %d encoded buffer size: %d\n", animation_counter, frame_count * sizeof(float));
       buffers[animation_counter * 4 + 2] = (cgltf_buffer)
         {
           .name = "animation_input",
@@ -775,12 +891,15 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
       serialize_animation(animation, anim, object_count, &rotation_anim, &translation_anim, &scale_anim);
       char* rotation_encoded = octet_stream_encode(rotation_anim,
         object_count * frame_count * 4 * sizeof(float));
+      fprintf(stderr, "rotation encoded buffer size: %d\n", object_count * frame_count * 4 * sizeof(float));
       free(rotation_anim);
       char* translation_encoded = octet_stream_encode(translation_anim,
         object_count * frame_count * 3 * sizeof(float));
+      fprintf(stderr, "translation encoded buffer size: %d\n", object_count * frame_count * 4 * sizeof(float));
       free(translation_anim);
       char* scale_encoded = octet_stream_encode(scale_anim,
         object_count * frame_count * 3 * sizeof(float));
+      fprintf(stderr, "scale encoded buffer size: %d\n", object_count * frame_count * 4 * sizeof(float));
       free(scale_anim);
 
       buffers[animation_counter * 4 + 3] = (cgltf_buffer)
@@ -1274,6 +1393,52 @@ void make_epic_gltf_file(char* working_dir, float** vertices, size_t* vertex_cou
     .version = "2.0"
   };
 
+  char extras_buf[256*256];
+  int total_wrote = 0;
+  int wrote = sprintf(
+    extras_buf + total_wrote,
+    "{ \"blink\": ["
+  );
+  total_wrote += wrote;
+  for (int i = 0; i < blink_count; i++) {
+    wrote = sprintf(
+      extras_buf + total_wrote,
+      "[%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]",
+      blinks[i].start_x,
+      blinks[i].start_y,
+      blinks[i].extent_x,
+      blinks[i].extent_y,
+      blinks[i].eye_0_x,
+      blinks[i].eye_0_y,
+      blinks[i].eye_1_x,
+      blinks[i].eye_1_y,
+      blinks[i].eye_2_x,
+      blinks[i].eye_2_y
+    );
+    total_wrote += wrote;
+    if (i + 1 < blink_count) {
+      wrote = sprintf(
+        extras_buf + total_wrote,
+        ", "
+      );
+      total_wrote += wrote;
+    }
+  }
+  wrote = sprintf(
+    extras_buf + total_wrote,
+    "] }"
+  );
+  total_wrote += wrote;
+
+  printf("extras buf: %s\n", extras_buf);
+  printf("extras bytes: %d\n", total_wrote);
+
+  data.file_data = extras_buf;
+  data.extras = (cgltf_extras) {
+    .start_offset = 0,
+    .end_offset = total_wrote,
+  };
+
   size_t out_filename_len = strlen(working_dir) + strlen("/out.gltf") + 1;
   char out_filename[out_filename_len];
   memset(out_filename, 0, out_filename_len);
@@ -1304,6 +1469,7 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_se
   }
   model_t new_model;
   new_model = load_model(iso, model_sector);
+  fprintf(stderr, "Blinks %d\n", new_model.blink_count);
 
   animation_t animation[animation_file_count];
   for (int i = 0; i < animation_file_count; i++) {
@@ -1425,18 +1591,22 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_se
       int tex_page_y = pal / 8;
       float tex_offs_x = (float) tex_page_x / 8;
       float tex_offs_y = (float) tex_page_y / 4;
-      texcoords[12 * i +  0] = quads[i].tex_c_x / 1024.0 + tex_offs_x;
-      texcoords[12 * i +  1] = quads[i].tex_c_y / 1024.0 + tex_offs_y;
-      texcoords[12 * i +  2] = quads[i].tex_b_x / 1024.0 + tex_offs_x;
-      texcoords[12 * i +  3] = quads[i].tex_b_y / 1024.0 + tex_offs_y;
-      texcoords[12 * i +  4] = quads[i].tex_a_x / 1024.0 + tex_offs_x;
-      texcoords[12 * i +  5] = quads[i].tex_a_y / 1024.0 + tex_offs_y;
-      texcoords[12 * i +  6] = quads[i].tex_b_x / 1024.0 + tex_offs_x;
-      texcoords[12 * i +  7] = quads[i].tex_b_y / 1024.0 + tex_offs_y;
-      texcoords[12 * i +  8] = quads[i].tex_c_x / 1024.0 + tex_offs_x;
-      texcoords[12 * i +  9] = quads[i].tex_c_y / 1024.0 + tex_offs_y;
-      texcoords[12 * i + 10] = quads[i].tex_d_x / 1024.0 + tex_offs_x;
-      texcoords[12 * i + 11] = quads[i].tex_d_y / 1024.0 + tex_offs_y;
+
+      // Slightly adjust the UV coordinates to make sampling of texels
+      // more consistent
+      float e = 0.0001;
+      texcoords[12 * i +  0] = quads[i].tex_c_x / 1024.0 + tex_offs_x + e;
+      texcoords[12 * i +  1] = quads[i].tex_c_y / 1024.0 + tex_offs_y + e;
+      texcoords[12 * i +  2] = quads[i].tex_b_x / 1024.0 + tex_offs_x + e;
+      texcoords[12 * i +  3] = quads[i].tex_b_y / 1024.0 + tex_offs_y + e;
+      texcoords[12 * i +  4] = quads[i].tex_a_x / 1024.0 + tex_offs_x + e;
+      texcoords[12 * i +  5] = quads[i].tex_a_y / 1024.0 + tex_offs_y + e;
+      texcoords[12 * i +  6] = quads[i].tex_b_x / 1024.0 + tex_offs_x + e;
+      texcoords[12 * i +  7] = quads[i].tex_b_y / 1024.0 + tex_offs_y + e;
+      texcoords[12 * i +  8] = quads[i].tex_c_x / 1024.0 + tex_offs_x + e;
+      texcoords[12 * i +  9] = quads[i].tex_c_y / 1024.0 + tex_offs_y + e;
+      texcoords[12 * i + 10] = quads[i].tex_d_x / 1024.0 + tex_offs_x + e;
+      texcoords[12 * i + 11] = quads[i].tex_d_y / 1024.0 + tex_offs_y + e;
       flat_verts[18 * i +  0] = -verts[quads[i].vertex_c].x / 4096.0;
       flat_verts[18 * i +  1] = -verts[quads[i].vertex_c].y / 4096.0;
       flat_verts[18 * i +  2] = verts[quads[i].vertex_c].z / 4096.0;
@@ -1555,7 +1725,9 @@ void rip_model(iso_t* iso, char* name, size_t model_sector, size_t* animation_se
     animation_labels,
     new_model.node_tree,
     new_model.object_count,
-    png_alloc
+    png_alloc,
+    new_model.blink,
+    new_model.blink_count
   );
   free(new_model.skeleton);
   free(new_model.node_tree);
