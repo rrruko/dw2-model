@@ -37,7 +37,7 @@ typedef struct model_s {
   uint32_t* vertex_offsets;
   uint32_t* normal_offsets;
   uint32_t* face_offsets;
-  blink_t blink[3];
+  blink_t blink[6];
   size_t blink_count;
 } model_t;
 
